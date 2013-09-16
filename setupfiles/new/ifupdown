@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+case "$2" in
+up)
+	/sbin/ifup $1
+	kill -s USR1 `/bin/cat /var/tmp/trigpid` 
+	;;
+down)
+	/sbin/ifdown $1
+	kill -s USR1 `/bin/cat /var/tmp/trigpid`
+	;;
+esac
