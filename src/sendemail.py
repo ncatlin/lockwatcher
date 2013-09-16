@@ -1,7 +1,7 @@
 '''
 Created on 5 Sep 2013
 
-@author: nia
+@author: Nia Catlin
 '''
 import smtplib, time
 import hashlib, hmac, os
@@ -11,8 +11,6 @@ from email.mime.multipart import MIMEMultipart
 from email import encoders
 
 import lwconfig
-
-
 
 #use a HMAC to prevent impersonation/replay
 secret = bytes(lwconfig.HMAC_SECRET,'UTF-8')
@@ -56,8 +54,8 @@ def sendEmail(subject,message,attachment=None):
         msg.attach(part)
         
     msg['Subject'] = subject
-    msg['From'] = 'niaspc@hotmail.com'
-    msg['To'] = 'aftest123@aol.co.uk'
+    msg['From'] = 'Yourphone'
+    msg['To'] = 'Yourpc'
     doSend(msg)
     
         

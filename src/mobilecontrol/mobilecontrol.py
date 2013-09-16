@@ -49,8 +49,8 @@ s.login(USERNAME, PASSWORD)
  
 msg = email.mime.Text.MIMEText('')
 msg['Subject'] = str(command)+' '+genCode(command)
-msg['From'] = 'niasphone@hotmail.com'
-msg['To'] = 'aftest123@aol.co.uk'
+msg['From'] = 'YourPhone'
+msg['To'] = 'Changeme'
 s.sendmail(msg['To'],USERNAME, msg.as_string())
  
 

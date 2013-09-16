@@ -1,7 +1,7 @@
 '''
 Created on Sep 15, 2013
 
-@author: liveuser
+@author: Nia Catlin
 '''
 import configparser, re
 

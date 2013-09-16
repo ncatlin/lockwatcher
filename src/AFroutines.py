@@ -1,7 +1,7 @@
 '''
 Created on 1 Sep 2013
 
-@author: nia
+@author: Nia Catlin
 '''
 
 import os, time,subprocess, multiprocessing
