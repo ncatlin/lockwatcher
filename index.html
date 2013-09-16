@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <meta charset='utf-8' />
+    <meta http-equiv="X-UA-Compatible" content="chrome=1" />
+    <meta name="description" content="Lockwatcher : Anti-forensic monitor program: watches for signs of forensic aquisition and purges keys/shuts everything down." />
+
+    <link rel="stylesheet" type="text/css" media="screen" href="stylesheets/stylesheet.css">
+
+    <title>Lockwatcher</title>
+  </head>
+
+  <body>
+
+    <!-- HEADER -->
+    <div id="header_wrap" class="outer">
+        <header class="inner">
+          <a id="forkme_banner" href="https://github.com/ncatlin/lockwatcher">View on GitHub</a>
+
+          <h1 id="project_title">Lockwatcher</h1>
+          <h2 id="project_tagline">Anti-forensic monitor program: watches for signs of forensic aquisition and purges keys/shuts everything down.</h2>
+
+            <section id="downloads">
+              <a class="zip_download_link" href="https://github.com/ncatlin/lockwatcher/zipball/master">Download this project as a .zip file</a>
+              <a class="tar_download_link" href="https://github.com/ncatlin/lockwatcher/tarball/master">Download this project as a tar.gz file</a>
+            </section>
+        </header>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div id="main_content_wrap" class="outer">
+      <section id="main_content" class="inner">
+        <h1>
+<a name="lockwatcher" class="anchor" href="#lockwatcher"><span class="octicon octicon-link"></span></a>lockwatcher</h1>
+
+<p>Anti-forensic monitor program: watches for signs of forensic aquisition and purges keys/shuts everything down.
+Pretty much everything is written in Python 3</p>
+
+<p>This program is the result of my masters thesis on anti-forensics and was written as part of a case-study on
+building a forensic aquisition/analysis resistant sytem.</p>
+
+<p>TL;DR</p>
+
+<p>You lock computer whenever not physically present at it.</p>
+
+<p>Someone attempts to do something to computer (or walks in room - there are lots of trigger options).</p>
+
+<p>Encryption keys are purged, computer shuts down, your data is safe. Probably.</p>
+
+<h1>
+<a name="install" class="anchor" href="#install"><span class="octicon octicon-link"></span></a>Install</h1>
+
+<p>sudo apt-get install motion ifplugd lm-sensors</p>
+
+<p>Install Imapclient (<a href="https://pypi.python.org/pypi/IMAPClient/0.10.2">https://pypi.python.org/pypi/IMAPClient/0.10.2</a>) by whatever method is convenient </p>
+
+<p>[download/unzip lockwatcher]</p>
+
+<p>sudo setupfiles/setup.sh</p>
+
+<h1>
+<a name="configuration" class="anchor" href="#configuration"><span class="octicon octicon-link"></span></a>Configuration</h1>
+
+<p>sudo src/lockwatcher-gui/lockwatcher-gui.py</p>
+
+<h1>
+<a name="run" class="anchor" href="#run"><span class="octicon octicon-link"></span></a>Run</h1>
+
+<p>sudo src/lockwatcher.py start</p>
+
+<h1>
+<a name="notes" class="anchor" href="#notes"><span class="octicon octicon-link"></span></a>Notes</h1>
+
+<p>I just uploaded this and it has only been tested on lubuntu, so good luck installing it.</p>
+      </section>
+    </div>
+
+    <!-- FOOTER  -->
+    <div id="footer_wrap" class="outer">
+      <footer class="inner">
+        <p class="copyright">Lockwatcher maintained by <a href="https://github.com/ncatlin">ncatlin</a></p>
+        <p>Published with <a href="http://pages.github.com">GitHub Pages</a></p>
+      </footer>
+    </div>
+
+    
+
+  </body>
+</html>
