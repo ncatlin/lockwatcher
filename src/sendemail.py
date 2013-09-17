@@ -3,7 +3,7 @@ Created on 5 Sep 2013
 
 @author: Nia Catlin
 '''
-import smtplib, time
+import smtplib, time, syslog, sys
 import hashlib, hmac, os
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -37,9 +37,12 @@ def doSend(msg):
     try:
         s = smtplib.SMTP(lwconfig.EMAIL_SMTP_HOST)
         s.login(lwconfig.EMAIL_USERNAME, lwconfig.EMAIL_PASSWORD)
-        s.sendmail(msg['To'],lwconfig.EMAIL_USERNAME, msg.as_string())       
+        s.sendmail(msg['To'],lwconfig.EMAIL_USERNAME, msg.as_string())
+        syslog.syslog('connected to smtp server')       
     except InterruptedError:
-        print('In error')
+        syslog.syslog('smtp connect error')
+    except:
+         syslog.syslog("Unexpected error: %s"%sys.exc_info()[0])
         
 def sendEmail(subject,message,attachment=None):
 
@@ -57,7 +60,12 @@ def sendEmail(subject,message,attachment=None):
     msg['Subject'] = subject
     msg['From'] = config['EMAIL']['COMMAND_EMAIL_ADDRESS']
     msg['To'] = config['EMAIL']['ALERT_EMAIL_ADDRESS']
-    doSend(msg)
+    
+    try:
+        doSend(msg)
+        syslog.syslog('smtp: mail sent')   
+    except:
+        syslog.syslog('send failed')
     
         
     

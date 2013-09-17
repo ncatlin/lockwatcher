@@ -287,6 +287,8 @@ class emailMonitor(threading.Thread):
                     syslog.syslog("Connection reset error on imap: reconnecting")
                     server = setupIMAP()
                     server.idle()
+                except:
+                    syslog.syslog('some other mail exception oh no')
                 continue
             
             #fetch header data using the sequence id of the new mail  
@@ -356,7 +358,7 @@ class lockWatcher(daemon):
 #if __name__ == "__main__":
         syslog.syslog('Staring lockwatcher daemon')
         lockState = False 
-        
+        global monitoringRoom
         
         #the dbus interface we use to catch and send lock signals
         #requires we be that users UID, so we save it here
@@ -389,7 +391,6 @@ class lockWatcher(daemon):
         
         
         #wait for a signal from the room motion process
-        monitoringRoom = False
         if lwconfig.E_ROOM_MOTION in triggerList:
             signal.signal(signal.SIGHUP, roomMotionSigHandler)
             #assume these are not running on startup
@@ -399,6 +400,7 @@ class lockWatcher(daemon):
                 monitoringRoom = True
             else:
                 subprocess.Popen(['/etc/init.d/motion','stop'])
+                monitoringRoom = False
                 
         #wait for a signal from the chassis motion process
         #handle it always incase the daemon is running
@@ -483,14 +485,20 @@ class lockWatcher(daemon):
                         sendEmail("Command failed","Screen was already locked")
                         syslog.syslog('Lock screen command received while locked')
                     
-                elif command == REMOTE_STARTMONITOR and monitoringRoom == False:
-                    monitoringRoom = True
-                    subprocess.Popen(['/etc/init.d/motion','restart'],stderr= subprocess.DEVNULL)
-                    sendEmail("Command successful","Movement monitoring initiated. Have a nice day.")
-                elif command == REMOTE_STOPMONITOR and monitoringRoom == True:
-                    monitoringRoom = False
-                    subprocess.Popen(['/etc/init.d/motion','stop'],stderr= subprocess.DEVNULL)
-                    sendEmail("Command successful","Movement monitoring disabled. Welcome home!")
+                elif command == REMOTE_STARTMONITOR:
+                    if monitoringRoom == False:
+                        monitoringRoom = True
+                        subprocess.Popen(['/etc/init.d/motion','restart'],stderr= subprocess.DEVNULL)
+                        sendEmail("Command successful","Movement monitoring initiated. Have a nice day.")
+                    else:
+                        sendEmail("Command failed","Movement monitoring already active.")
+                elif command == REMOTE_STOPMONITOR:
+                    if monitoringRoom == True:
+                        monitoringRoom = False
+                        subprocess.Popen(['/etc/init.d/motion','stop'],stderr= subprocess.DEVNULL)
+                        sendEmail("Command successful","Movement monitoring disabled. Welcome home!")
+                    else:
+                        sendEmail("Command failed","Movement monitoring was not active.")
                 elif command == REMOTE_SHUTDOWN:
                     AFroutines.standardShutdown()
                     sendEmail("Command successful","Shutting down...")
@@ -536,7 +544,7 @@ if __name__ == "__main__":
                         fd.close()
                     except PermissionError:
                         print("Do not have permission to write PID to %s"%lwconfig.PID_FILE)
-                        exit()
+                        #exit()
                     
                     signal.signal(signal.SIGINT, kill_self)   
                     lockWatcher.run(lockWatcher)
