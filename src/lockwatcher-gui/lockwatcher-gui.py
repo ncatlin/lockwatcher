@@ -5,6 +5,8 @@ Created on Sep 12, 2013
 @author: Nia Catlin
 
 I am bad at Gtk so this is a nightmare to read with all the boxes
+
+todo: need to catch destroy and kill any threads
 '''
 from gi.repository import Gtk
 from gi.repository import GObject
@@ -64,7 +66,7 @@ todo: add shutdown actions- truecrypt, custom(wait x seconds or inf for completi
 class MainWindow(Gtk.Window):
     def __init__(self, *args, **kwargs):
         Gtk.Window.__init__(self, *args, **kwargs)
-        self.set_title("Lockmonitor configuration")
+        self.set_title("Lockwatcher configuration")
         self.set_size_request(200, 400)
         self.connect("destroy", Gtk.main_quit)
         self.create_widgets()
@@ -137,21 +139,57 @@ class MainWindow(Gtk.Window):
         self.show_all()
     
     def createOtherBox(self):
+        
+        settingsBox = Gtk.VBox()
+        self.configBox.add(settingsBox)
+                
         deskEnv_TT = "The value of the users XDG_CURRENT_DESKTOP enviromental variable, required to handle screen locking.\nRun 'env' without root to find it."
         boxdeskEnv = Gtk.HBox()
-        self.configBox.add(boxdeskEnv)
+        settingsBox.pack_start(boxdeskEnv, False, False, 0)
         boxdeskEnv.set_tooltip_text(deskEnv_TT)
         deskEnvL = Gtk.Label('The desktop environment:')
-        boxdeskEnv.pack_start(deskEnvL, True, True, 0)
+        boxdeskEnv.pack_start(deskEnvL, False, False, 0)
         deskEnvE = Gtk.Entry()
         deskEnvE.set_name('desktop_env')
         deskEnvE.set_text(config['TRIGGERS']['DESKTOP_ENV'])
         deskEnvE.connect('changed',fileconfig.entryChanged)
-        boxdeskEnv.pack_start(deskEnvE, True, True, 0)
-     
+        boxdeskEnv.pack_start(deskEnvE, False, False, 0)
+        
+        boxBaseDir = Gtk.VBox()
+        settingsBox.pack_start(boxBaseDir, False, False, 14)
+        baseDir_TT = "Base directory of lockwatcher.py"
+        boxBaseDir.set_tooltip_text(baseDir_TT)
+        baseDirL = Gtk.Label('Lockwatcher.py location')
+        boxBaseDir.pack_start(baseDirL, False, False, 0)
+        
+        fileEntryBox = Gtk.HBox()
+        boxBaseDir.pack_start(fileEntryBox, False, False, 0)
+        self.baseDirE = Gtk.Entry()
+        self.baseDirE.set_name('base_dir')
+        self.baseDirE.set_text(config['TRIGGERS']['BASE_DIR'])
+        self.baseDirE.connect('changed',fileconfig.entryChanged)
+        fileEntryBox.pack_start(self.baseDirE, True, True, 0)
+        
+        filechooserbutton = Gtk.FileChooserButton('Select a File')
+        filechooserbutton.set_action(Gtk.FileChooserAction.SELECT_FOLDER)
+        fileEntryBox.pack_start(filechooserbutton, False, False, 0)
+        filechooserbutton.connect('file-set',self.chosenDir)
+    
+    def chosenDir(self,filediag):
+        print('setting to',filediag.get_uri())
+        self.baseDirE.set_text(filediag.get_uri())
+        
+        
     def createStatusBox(self):
         warnLab = Gtk.Label('Note: Disable Lockwatcher while altering its configuration')
         self.configBox.add(warnLab)
+        
+        if os.path.exists('/var/tmp/trigpid'):
+           warnLab = Gtk.Label('Running')
+           self.configBox.add(warnLab) 
+        else:
+            warnLab = Gtk.Label('Not running')
+            self.configBox.add(warnLab) 
         
     def createShutdownBox(self):
         
@@ -1059,10 +1097,11 @@ class MainWindow(Gtk.Window):
         
         label = Gtk.Label("Current Temperature: %s"%"Not implemented")
         TempPanel2.pack_start(label, False, False, 8) 
-    
+
 GObject.threads_init()     
 win = MainWindow()
 win.connect("delete-event", Gtk.main_quit)
 win.show_all()
 Gtk.main()
+
 
