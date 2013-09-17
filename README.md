@@ -38,6 +38,7 @@ sudo src/lockwatcher.py start
 Using remote control
 ====================
 Install QPython on your Android device
+
 Go to http://qpython.com/create.php, paste in mobilecontrol.py
 Edit emails,password to your liking and add the authentication secret
 Generate the QRCode, scan with QPython on your phone
