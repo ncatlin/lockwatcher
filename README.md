@@ -54,4 +54,17 @@ Using remote control
 Notes
 ===========
 I just uploaded this and it has only been tested on lubuntu, so good luck installing it.
+
+To-do list
+===========
+The whole qpython thing is a bit of a pain to use: an app could be much nicer
+
+RAM temperature monitoring. My motherboard won't play nice with decode-dimms and I havent had much luck doing what the ballistix MOD utility does. 
+Also: other types of RAM
+
+Maybe use the DBUS for some IPC to play nice with the GUI program for monitoring lockwatcher status as it is running. Not too important.
+
+Testing and better install configurations for other linux distros
+
+A Windows version! I made a start and in a few ways it is easier but haven't looked into alternatives for motion monitoring yet. Not really convinced Python is the best language for this either.
  
