@@ -11,6 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email import encoders
 
 import lwconfig
+from lwconfig import config
 
 #use a HMAC to prevent impersonation/replay
 secret = bytes(lwconfig.HMAC_SECRET,'UTF-8')
@@ -54,8 +55,8 @@ def sendEmail(subject,message,attachment=None):
         msg.attach(part)
         
     msg['Subject'] = subject
-    msg['From'] = 'Yourphone'
-    msg['To'] = 'Yourpc'
+    msg['From'] = config['EMAIL']['COMMAND_EMAIL_ADDRESS']
+    msg['To'] = config['EMAIL']['ALERT_EMAIL_ADDRESS']
     doSend(msg)
     
         

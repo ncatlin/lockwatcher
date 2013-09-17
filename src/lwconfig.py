@@ -5,8 +5,11 @@ Created on 10 Sep 2013
 '''
 
 import configparser
+
+CONFIG_FILE = '/etc/lockwatcher/lockwatcher.ini'
+    
 config = configparser.ConfigParser()
-config.read('/etc/lockwatcher/lockwatcher.ini')
+config.read(CONFIG_FILE)
 
 E_KILL_SWITCH    = 0
 E_TEMPERATURE    = 1
@@ -77,7 +80,7 @@ EMAIL_USERNAME = config['EMAIL']['EMAIL_USERNAME']
 EMAIL_PASSWORD = config['EMAIL']['EMAIL_PASSWORD']
 
 #the number of failed network commands to trigger the killswitch
-BAD_COMMAND_LIMIT = config['EMAIL']['BAD_COMMAND_LIMIT']
+BAD_COMMAND_LIMIT = int(config['EMAIL']['BAD_COMMAND_LIMIT'])
 
 #send an email to alert the user before killing the system
 #useful but makes the shutdown process take longer

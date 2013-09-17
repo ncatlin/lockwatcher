@@ -262,6 +262,7 @@ def setupIMAP():
         server = imapclient.IMAPClient(lwconfig.EMAIL_IMAP_HOST, use_uid=False, ssl=True)
         server.login(lwconfig.EMAIL_USERNAME, lwconfig.EMAIL_PASSWORD)
         server.select_folder('INBOX')
+        syslog.syslog("Established IMAP connection")
         return server
     except:
         syslog.syslog("Error: Could not connect to mail IMAP server, will not listen for remote commands")
@@ -274,6 +275,7 @@ class emailMonitor(threading.Thread):
     def run(self):
         server = setupIMAP()
         server.idle()
+        syslog.syslog('starting email monitor loop')
         while True:
             #refresh the connection every 14 mins so it doesnt timeout
             seqid = server.idle_check(840)
@@ -288,14 +290,15 @@ class emailMonitor(threading.Thread):
                 continue
             
             #fetch header data using the sequence id of the new mail  
-            print("Got an email..")
             seqid = seqid[0][0]
             server.idle_done()
             keys = server.fetch(seqid, ['ENVELOPE'])
             server.idle()
             keys = keys[seqid]['ENVELOPE']
             if keys[2][0][2] == 'niasphone':
-                eventQueue.put(("mail",keys[1]))     
+                eventQueue.put(("mail",keys[1]))
+            else:
+                syslog.syslog("Got an email, unknown addressee: %s"%keys[2][0][2])
 
 #find better way to choose event - /proc/bus/input/devics is good       
 class keyboardMonitor(threading.Thread):
@@ -379,13 +382,14 @@ class lockWatcher(daemon):
             keyMon.start()
         
         #write pid to temporary file so 'motion' and 'netplugd' can signal us
+        '''
         try:
             fd = open(lwconfig.PID_FILE,'w')
             fd.write(str(os.getpid()))
             fd.close()
         except PermissionError:
             syslog.syslog("Do not have permission to write PID to ",lwconfig.PID_FILE)
-        
+        '''
         
         #wait for a signal from 'netplugd' indicating a cable change
         #subprocess.Popen(['/etc/init.d/ifplugd','restart'])
@@ -437,7 +441,7 @@ class lockWatcher(daemon):
             (event,details) = eventQueue.get(block=True, timeout=None)
             if event in lwconfig.triggerText.keys():
                 syslog.syslog("Trigger event '%s' (Details:%s, Lock status:%s)"%(lwconfig.triggerText[event],details,lockState))
-            else: syslog.syslog("Non trigger event: ",event)
+            else: syslog.syslog("Non trigger event: %s"%event)
             
             if event in lwconfig.alwaysTriggers or (lockState == True and event in lwconfig.lockedTriggers): 
                 triggerInfo = "%s. Extra details: %s"%(lwconfig.triggerText[event],details)
@@ -463,6 +467,7 @@ class lockWatcher(daemon):
                         intrusionMonThread = None
             elif event == 'mail': 
                 command, code = details.split(' ')
+                syslog.syslog('processing mail %s %s'%(command,code))
                 command = int(command)
                 if command not in commandList or validHMAC(code,command) == False:
                     badCommands += 1
@@ -470,16 +475,20 @@ class lockWatcher(daemon):
                     if badCommands >= lwconfig.BAD_COMMAND_LIMIT:
                         reason = "Too many bad remote commands received"
                         AFroutines.antiforensicShutdown(reason,lockState)
+                else:
+                    syslog.syslog('mail accepted')
                 
                 #a successful command resets the counter
                 badCommands = 0       
                 
                 if command == REMOTE_LOCK:
                     if lockState == False:
-                        #AFroutines.lockScreen()
+                        AFroutines.lockScreen()
                         sendEmail("Command successful","Screen locked")
+                        syslog.syslog('Locking screen from remote command')
                     else:
                         sendEmail("Command failed","Screen was already locked")
+                        syslog.syslog('Lock screen command received while locked')
                     
                 elif command == REMOTE_STARTMONITOR and monitoringRoom == False:
                     monitoringRoom = True
@@ -499,7 +508,8 @@ class lockWatcher(daemon):
             elif event == 'fatalerror':
                 syslog.syslog('dying after fatal error')
                 exit()
-               
+ 
+         
 if __name__ == "__main__":
         daemon = lockWatcher('/var/run/trigpid')
         if len(sys.argv) == 2:
