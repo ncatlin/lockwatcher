@@ -381,15 +381,6 @@ class lockWatcher(daemon):
             keyMon.daemon = True
             keyMon.start()
         
-        #write pid to temporary file so 'motion' and 'netplugd' can signal us
-        '''
-        try:
-            fd = open(lwconfig.PID_FILE,'w')
-            fd.write(str(os.getpid()))
-            fd.close()
-        except PermissionError:
-            syslog.syslog("Do not have permission to write PID to ",lwconfig.PID_FILE)
-        '''
         
         #wait for a signal from 'netplugd' indicating a cable change
         #subprocess.Popen(['/etc/init.d/ifplugd','restart'])
@@ -398,15 +389,17 @@ class lockWatcher(daemon):
         
         
         #wait for a signal from the room motion process
+        monitoringRoom = False
         if lwconfig.E_ROOM_MOTION in triggerList:
             signal.signal(signal.SIGHUP, roomMotionSigHandler)
             #assume these are not running on startup
             if lockState == True:
                 print("starting motion")
                 subprocess.Popen(['/etc/init.d/motion','restart'])
+                monitoringRoom = True
             else:
                 subprocess.Popen(['/etc/init.d/motion','stop'])
-          
+                
         #wait for a signal from the chassis motion process
         #handle it always incase the daemon is running
         signal.signal(signal.SIGUSR2, chassisMotionSigHandler)
@@ -508,22 +501,52 @@ class lockWatcher(daemon):
             elif event == 'fatalerror':
                 syslog.syslog('dying after fatal error')
                 exit()
- 
-         
+                
+#kill lock watching process
+def killLockmon():
+    try: 
+        lockmonFD = open('/var/run/lockpid','r')
+        lockmonPID = lockmonFD.read()
+        lockmonFD.close()
+        subprocess.Popen(['/bin/kill',lockmonPID],stderr= subprocess.DEVNULL)  
+    except:
+        pass
+     
+    if os.path.exists('/var/run/lockpid'): 
+        os.remove('/var/run/lockpid')
+
+def kill_self(signal, frame):
+        '''
+        #this doesnt work, os.path.exists() thinks it exists then
+        #we get filenotfound for trying to kill it
+        if os.path.exists(lwconfig.PID_FILE): 
+            print(lwconfig.PID_FILE, 'exists!')
+            os.remove(lwconfig.PID_FILE)
+        '''
+        killLockmon()
+        exit()    
+
 if __name__ == "__main__":
-        daemon = lockWatcher('/var/run/trigpid')
+        
         if len(sys.argv) == 2:
+                if sys.argv[1] == 'console':
+                    try:
+                        fd = open(lwconfig.PID_FILE,'w')
+                        fd.write(str(os.getpid()))
+                        fd.close()
+                    except PermissionError:
+                        print("Do not have permission to write PID to %s"%lwconfig.PID_FILE)
+                        exit()
+                    
+                    signal.signal(signal.SIGINT, kill_self)   
+                    lockWatcher.run(lockWatcher)
+
+                        
+                daemon = lockWatcher(lwconfig.PID_FILE)
                 if 'start' == sys.argv[1]:
                         daemon.start()
                 elif 'stop' == sys.argv[1]:
-                        try: #kill secondary lock watching process
-                            lockmonFD = open('/var/run/lockpid','r')
-                            lockmonPID = lockmonFD.read()
-                            lockmonFD.close()
-                        except:
-                            pass
-                        subprocess.Popen(['/bin/kill',lockmonPID],stderr= subprocess.DEVNULL)
-
+                        killLockmon()
                         daemon.stop()
                 elif 'restart' == sys.argv[1]:
                         daemon.restart()
@@ -532,5 +555,5 @@ if __name__ == "__main__":
                         sys.exit(2)
                 sys.exit(0)
         else:
-                print( "usage: %s start|stop|restart" % sys.argv[0])
+                print( "usage: %s start|stop|restart|console" % sys.argv[0])
                 sys.exit(2)                
