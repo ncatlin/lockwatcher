@@ -4,7 +4,7 @@ Created on 10 Sep 2013
 @author: Nia Catlin
 '''
 
-import configparser
+import configparser, syslog
 
 CONFIG_FILE = '/etc/lockwatcher/lockwatcher.ini'
     
@@ -96,3 +96,11 @@ DESKTOP_ENV = config['TRIGGERS']['DESKTOP_ENV']
 if DESKTOP_ENV == 'LXDE':
     DBUSSUPPORTED = False
 else: DBUSSUPPORTED = True
+
+errorTarget = None
+def printMessage(text):
+    if errorTarget == 'console':
+        print(text)
+    elif errorTarget == 'syslog': 
+        syslog.syslog(text)
+    

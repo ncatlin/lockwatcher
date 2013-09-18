@@ -11,7 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email import encoders
 
 import lwconfig
-from lwconfig import config
+from lwconfig import config, printMessage
 
 #use a HMAC to prevent impersonation/replay
 secret = bytes(lwconfig.HMAC_SECRET,'UTF-8')
@@ -38,11 +38,11 @@ def doSend(msg):
         s = smtplib.SMTP(lwconfig.EMAIL_SMTP_HOST)
         s.login(lwconfig.EMAIL_USERNAME, lwconfig.EMAIL_PASSWORD)
         s.sendmail(msg['To'],lwconfig.EMAIL_USERNAME, msg.as_string())
-        syslog.syslog('connected to smtp server')       
+        printMessage('Connected to smtp server')       
     except InterruptedError:
-        syslog.syslog('smtp connect error')
+        printMessage('smtp connect error %s'%sys.exc_info()[0])
     except:
-         syslog.syslog("Unexpected error: %s"%sys.exc_info()[0])
+        printMessage("Unexpected error: %s"%sys.exc_info()[0])
         
 def sendEmail(subject,message,attachment=None):
 
@@ -63,9 +63,9 @@ def sendEmail(subject,message,attachment=None):
     
     try:
         doSend(msg)
-        syslog.syslog('smtp: mail sent')   
+        printMessage('smtp: mail sent with subject "%s"'%subject)   
     except:
-        syslog.syslog('send failed')
+        printMessage('send failed %s'%sys.exc_info()[0])
     
         
     
