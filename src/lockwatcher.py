@@ -20,10 +20,11 @@ import syslog
 
 from gi.repository import GObject
 from pwd import getpwnam
+import dbus
 from dbus.mainloop.glib import DBusGMainLoop
 
 import lwconfig, AFroutines
-from lwconfig import triggerList
+from lwconfig import triggerList, printMessage
 
 from daemon import daemon
 
@@ -70,11 +71,10 @@ def lockMonitorProcess(uid,q):
             GObject.MainLoop().run()
         else:
             if lwconfig.DESKTOP_ENV == 'LXDE':
-                print('running lxde lockmon')
                 try:
                     currentState = ('locked' in str(subprocess.check_output(["/usr/bin/xscreensaver-command", "-time"])))
                 except subprocess.CalledProcessError:
-                    syslog.syslog("Screen status not set - lock screen once before running lockwatcher")
+                    printMessage("Screen status not set - lock screen once before running lockwatcher")
                     currentState = False
                 while True:
                     time.sleep(1)
@@ -109,7 +109,6 @@ class lockMonitor(threading.Thread):
         p.daemon = True
         p.start()
         
-        print('started p',p.pid)
         pidfd = open('/var/run/lockpid','w')
         pidfd.write(str(p.pid))
         pidfd.close()
@@ -120,7 +119,7 @@ class lockMonitor(threading.Thread):
             s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
             s.bind(('127.0.0.1',22190))
         except:
-            syslog.syslog('Could not bind to 127.0.0.1:22190, please kill any other lockwatchers and try again')
+            printMessage('Could not bind to 127.0.0.1:22190, please kill any other lockwatchers and try again')
             eventQueue.put(('fatalerror',None))
             return
         
@@ -138,7 +137,7 @@ class temperatureMonitor(threading.Thread):
         for chip in sensors.get_detected_chips():
             if "acpi" in str(chip): break
         else:
-            syslog.syslog("Could not read acpi bus: Temperature monitoring disabled")
+            printMessage("Could not read acpi bus: Temperature monitoring disabled")
             self.die = True
             return
         self.chip = chip
@@ -155,7 +154,7 @@ class temperatureMonitor(threading.Thread):
         while self.die == False:
             time.sleep(1)
             newTemp = self.chip.get_value(self.subfeature.number)
-            if newTemp < lwconfig.LOW_TEMP: eventQueue.put((lwconfig.E_KILL_SWITCH,"newTemp degrees C"))
+            if newTemp < lwconfig.LOW_TEMP: eventQueue.put((lwconfig.E_TEMPERATURE,"%s degrees C"%newTemp))
             lastTemp = newTemp
             
     def terminate(self):
@@ -194,7 +193,7 @@ class intrusionMon(threading.Thread):
             return
         
         if not os.path.exists(intrusionSwitchPath) and noSwitchNotified == False:
-            syslog.syslog("Error: No chassis intrusion detection switch found") 
+            printMessage("Error: No chassis intrusion detection switch found") 
             noSwitchNotified = True
             self.die = True
             return
@@ -204,7 +203,7 @@ class intrusionMon(threading.Thread):
             subprocess.Popen("echo 0 > %s"%intrusionSwitchPath,Shell=True)
             time.sleep(0.5)
             if intrusionSwitchStatus() != 0: 
-                syslog.syslog("Error: Cannot reset an already triggered intrusion switch. Monitoring disabled.")
+                printMessage("Error: Cannot reset an already triggered intrusion switch. Monitoring disabled.")
                 self.die = True
                 return
     def run(self):
@@ -235,7 +234,7 @@ class bluetoothMon(threading.Thread):
             self.s.connect((lwconfig.BLUETOOTH_DEVICE_ID,2))
         except:
             self.s = None
-            syslog.syslog("Error: Bluetooth connection to %s unavailable or unauthorised"%lwconfig.BLUETOOTH_DEVICE_ID)
+            printMessage("Error: Bluetooth connection to %s unavailable or unauthorised"%lwconfig.BLUETOOTH_DEVICE_ID)
             return
         
     def run(self):
@@ -248,7 +247,7 @@ class bluetoothMon(threading.Thread):
             except socket.timeout:
                 pass
             except:
-                syslog.syslog("Bad connection to bluetooth device")
+                printMessage("Bad connection to bluetooth device")
                 eventQueue.put((lwconfig.E_BLUETOOTH,None))
                 time.sleep(60)
             
@@ -262,10 +261,10 @@ def setupIMAP():
         server = imapclient.IMAPClient(lwconfig.EMAIL_IMAP_HOST, use_uid=False, ssl=True)
         server.login(lwconfig.EMAIL_USERNAME, lwconfig.EMAIL_PASSWORD)
         server.select_folder('INBOX')
-        syslog.syslog("Established IMAP connection")
+        printMessage("Established IMAP connection")
         return server
     except:
-        syslog.syslog("Error: Could not connect to mail IMAP server, will not listen for remote commands")
+        printMessage("Error: Could not connect to mail IMAP server, will not listen for remote commands")
         return
               
 class emailMonitor(threading.Thread):
@@ -275,7 +274,8 @@ class emailMonitor(threading.Thread):
     def run(self):
         server = setupIMAP()
         server.idle()
-        syslog.syslog('starting email monitor loop')
+
+        connectionFails = 0
         while True:
             #refresh the connection every 14 mins so it doesnt timeout
             seqid = server.idle_check(840)
@@ -283,12 +283,16 @@ class emailMonitor(threading.Thread):
                 try:
                     server.idle_done()
                     server.idle()
-                except ConnectionResetError:
-                    syslog.syslog("Connection reset error on imap: reconnecting")
+                    connectionFails = 0
+                except:
+                    printMessage('Connection exception on imap IDLE: %s. Attempting reconnect attempt %s'%(sys.exc_info()[0],connectionFails))
+                    time.sleep(connectionFails * 3)
+                    connectionFails += 1
+                    if connectionFails >= 3:
+                        printMessage('Too many IMAP connection errors, giving up')
+                        return
                     server = setupIMAP()
                     server.idle()
-                except:
-                    syslog.syslog('some other mail exception oh no')
                 continue
             
             #fetch header data using the sequence id of the new mail  
@@ -300,7 +304,18 @@ class emailMonitor(threading.Thread):
             if keys[2][0][2] == 'niasphone':
                 eventQueue.put(("mail",keys[1]))
             else:
-                syslog.syslog("Got an email, unknown addressee: %s"%keys[2][0][2])
+                printMessage("Got an email, unknown addressee: %s"%keys[2][0][2])
+
+
+class dbusMonitor(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self.name = "dbusMonThread"
+    def run(self):
+        
+        session = dbus.SessionBus()
+        
+        
 
 #find better way to choose event - /proc/bus/input/devics is good       
 class keyboardMonitor(threading.Thread):
@@ -309,17 +324,17 @@ class keyboardMonitor(threading.Thread):
         self.name = "KeyboardMonThread"
     def run(self):
         if lwconfig.kbdEvent == None:
-            syslog.syslog("Keyboard not found or not configured - run lockwatcher-gui")
+            printMessage("Keyboard not found or not configured - run lockwatcher-gui")
             return
         
         try:
             dev = open(lwconfig.kbdEvent,'rb')
         except IOError as e:
-            syslog.syslog("Cannot monitor keyboard: %s\n->Need to run as root"%e)
+            printMessage("Cannot monitor keyboard: %s\n->Need to run as root"%e)
             return
         
         if len(lwconfig.triggerKeyCombination) == 0: 
-            syslog.syslog("No trigger key combination provided: keyboard killswitch inactive")
+            printMessage("No trigger key combination provided: keyboard killswitch inactive")
             return
         
         trigKeys = {}
@@ -356,7 +371,7 @@ commandList = range(REMOTE_LOCK,REMOTE_KILLSWITCH+1)
 class lockWatcher(daemon):   
     def run(self):
 #if __name__ == "__main__":
-        syslog.syslog('Staring lockwatcher daemon')
+        printMessage('Starting lockwatcher daemon')
         lockState = False 
         global monitoringRoom
         
@@ -395,7 +410,6 @@ class lockWatcher(daemon):
             signal.signal(signal.SIGHUP, roomMotionSigHandler)
             #assume these are not running on startup
             if lockState == True:
-                print("starting motion")
                 subprocess.Popen(['/etc/init.d/motion','restart'])
                 monitoringRoom = True
             else:
@@ -431,12 +445,12 @@ class lockWatcher(daemon):
         tempMonThread = None
         intrusionMonThread = None
             
-        syslog.syslog("AF detection started at %s"%time.strftime('%x %X'))
+        printMessage("AF detection started at %s"%time.strftime('%x %X'))
         while True:
             (event,details) = eventQueue.get(block=True, timeout=None)
             if event in lwconfig.triggerText.keys():
-                syslog.syslog("Trigger event '%s' (Details:%s, Lock status:%s)"%(lwconfig.triggerText[event],details,lockState))
-            else: syslog.syslog("Non trigger event: %s"%event)
+                printMessage("Trigger event '%s' (Details:%s, Lock status:%s)"%(lwconfig.triggerText[event],details,lockState))
+            else: printMessage("Non trigger event: %s"%event)
             
             if event in lwconfig.alwaysTriggers or (lockState == True and event in lwconfig.lockedTriggers): 
                 triggerInfo = "%s. Extra details: %s"%(lwconfig.triggerText[event],details)
@@ -446,14 +460,14 @@ class lockWatcher(daemon):
             elif event == 'lock':
                 lockState = details
                 if lockState == True:
-                    syslog.syslog('setting lock to true')
+                    printMessage('Setting lock state to true')
                     #polling threads die when the screen is unlocked - have to ressurect
                     if lwconfig.E_TEMPERATURE in triggerList and tempMonThread == None: 
                         tempMonThread = temperatureMonStart()
                     if lwconfig.E_INTRUSION in triggerList and intrusionMonThread == None:  
                         intrusionMonThread = intrusionMonStart()
                 else:
-                    syslog.syslog('setting lock to false')
+                    printMessage('Setting lock state to false')
                     if tempMonThread != None: 
                         tempMonThread.terminate()
                         tempMonThread = None
@@ -462,16 +476,17 @@ class lockWatcher(daemon):
                         intrusionMonThread = None
             elif event == 'mail': 
                 command, code = details.split(' ')
-                syslog.syslog('processing mail %s %s'%(command,code))
+                printMessage('Received mail %s %s'%(command,code))
                 command = int(command)
                 if command not in commandList or validHMAC(code,command) == False:
                     badCommands += 1
                     sendEmail("Command failed","Bad command or authentication code received: %s"%command)
+                    printMessage('Mail not authenticated or bad command')
                     if badCommands >= lwconfig.BAD_COMMAND_LIMIT:
                         reason = "Too many bad remote commands received"
                         AFroutines.antiforensicShutdown(reason,lockState)
                 else:
-                    syslog.syslog('mail accepted')
+                    printMessage('Mail authenticated')
                 
                 #a successful command resets the counter
                 badCommands = 0       
@@ -480,34 +495,43 @@ class lockWatcher(daemon):
                     if lockState == False:
                         AFroutines.lockScreen()
                         sendEmail("Command successful","Screen locked")
-                        syslog.syslog('Locking screen from remote command')
+                        printMessage('Locking screen from remote command')
                     else:
                         sendEmail("Command failed","Screen was already locked")
-                        syslog.syslog('Lock screen command received while locked')
+                        printMessage('Lock screen failed - command received while locked')
                     
                 elif command == REMOTE_STARTMONITOR:
                     if monitoringRoom == False:
                         monitoringRoom = True
                         subprocess.Popen(['/etc/init.d/motion','restart'],stderr= subprocess.DEVNULL)
                         sendEmail("Command successful","Movement monitoring initiated. Have a nice day.")
+                        printMessage("Movement monitoring initiated after remote command")
                     else:
                         sendEmail("Command failed","Movement monitoring already active.")
+                        printMessage("Remote movement monitoring activation failed: already active")
+                        
                 elif command == REMOTE_STOPMONITOR:
                     if monitoringRoom == True:
                         monitoringRoom = False
                         subprocess.Popen(['/etc/init.d/motion','stop'],stderr= subprocess.DEVNULL)
                         sendEmail("Command successful","Movement monitoring disabled. Welcome home!")
+                        printMessage("Movement monitoring disabled after remote command")
                     else:
                         sendEmail("Command failed","Movement monitoring was not active.")
+                        printMessage("Remote movement monitoring deactivation failed: not active")
+                        
                 elif command == REMOTE_SHUTDOWN:
-                    AFroutines.standardShutdown()
                     sendEmail("Command successful","Shutting down...")
+                    printMessage("Standard shutdown due to remote command")
+                    AFroutines.standardShutdown()
+                    
                 elif command == REMOTE_KILLSWITCH:
+                    printMessage("Emergency shutdown due to remote command")
                     reason = "Remote shutdown command received"
                     AFroutines.antiforensicShutdown(reason,lockState)   
                     
             elif event == 'fatalerror':
-                syslog.syslog('dying after fatal error')
+                printMessage('Killed by fatal error')
                 exit()
                 
 #kill lock watching process
@@ -546,17 +570,20 @@ if __name__ == "__main__":
                         print("Do not have permission to write PID to %s"%lwconfig.PID_FILE)
                         #exit()
                     
+                    lwconfig.errorTarget = 'console'
                     signal.signal(signal.SIGINT, kill_self)   
                     lockWatcher.run(lockWatcher)
 
                         
                 daemon = lockWatcher(lwconfig.PID_FILE)
                 if 'start' == sys.argv[1]:
+                        lwconfig.errorTarget = 'syslog'
                         daemon.start()
                 elif 'stop' == sys.argv[1]:
                         killLockmon()
                         daemon.stop()
                 elif 'restart' == sys.argv[1]:
+                        lwconfig.errorTarget = 'syslog'
                         daemon.restart()
                 else:
                         print( "Unknown command")
