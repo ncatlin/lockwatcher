@@ -304,18 +304,7 @@ class emailMonitor(threading.Thread):
             if keys[2][0][2] == 'niasphone':
                 eventQueue.put(("mail",keys[1]))
             else:
-                printMessage("Got an email, unknown addressee: %s"%keys[2][0][2])
-
-
-class dbusMonitor(threading.Thread):
-    def __init__(self):
-        threading.Thread.__init__(self)
-        self.name = "dbusMonThread"
-    def run(self):
-        
-        session = dbus.SessionBus()
-        
-        
+                printMessage("Got an email, unknown addressee: %s"%keys[2][0][2])   
 
 #find better way to choose event - /proc/bus/input/devics is good       
 class keyboardMonitor(threading.Thread):
