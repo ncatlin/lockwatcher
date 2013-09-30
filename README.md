@@ -33,7 +33,7 @@ The software was designed for running on live-CD/live-USB Linux, where dismounti
 powering down is accomplished in 3-5 seconds or less, with little warning given to the attacker. 
  
 There is a Windows version but even forced shutdown is SLOW and obvious, and the difficulty in running it 
-from ramdisk (live-usb,etc) means you are likely to have lots of interesting things on disk even if they can't 
+from ramdisk (live-USB,etc) means you are likely to have lots of interesting things on disk even if they can't 
 get your RAM out in time.
  
 It is specifically designed for defeating live memory aquisition.
@@ -53,7 +53,7 @@ It does not protect you from having someone beat you with a wrench (or threaten 
 encryption keys. Deniable encryption might help, but using it effectively requires a lot of diligence.
 
 There can be false positives. A device failing or a cat walking around the room can scare the system into 
-shutting down. By defauly a shutdown isn't very destructive, so this should only be a nuisance if it happens.
+shutting down. By default a shutdown isn't very destructive, so this should only be a nuisance if it happens.
 
 *What kind of 'Interaction' are we talking about?
 =============
@@ -64,31 +64,32 @@ the computer is running in.
 
 Any devices or disks being plugged into the system or removed. USB, Firewire, CDs, etc.
 
-* Keyboard killswitch
+* Keyboard kill-switch
 
 One or more keyboard keys can be set to trigger an emergency shutdown if you are at the computer when it is required.
 
 * Network interface monitoring
 
-If the standard procedure of isolating the computer from the network is followed, or an attacker inserts/removes 
-a network cable to listen to traffic then lockwatcher will notice this and trigger a shutdown.
+If the standard procedure of isolating the computer from the network is followed, or an attacker connects/disconnects
+a network interface to access traffic then Lockwatcher will notice this and trigger a shutdown.
 
 * Bluetooth monitoring
 
 Lockwatcher can connect to a Bluetooth device and trigger a shutdown if this connection is severed. This is useful 
 if your devices are removed, turned off or placed in a shielded container by an attacker. If you have a device which
- can be quickly turned off or parted from its batteries then this becomes a handy portable killswitch when you are 
+ can be quickly turned off or parted from its batteries then this becomes a handy portable kill-switch when you are 
  not at the computer.
  
 * RAM temperature detection
 
 The first defence against RAM aquisition by freezing/removing memory modules 
-(see: https://citp.princeton.edu/research/memory/)
+(see: https://citp.princeton.edu/research/memory/), Lockwatcher can monitor the temperature of certain memory 
+modules and trigger if their temperature falls below a certain point.
 
 The availability of memory modules with temperature sensors is bad so at the moment Lockwatcher only
 supports monitoring Crucial Ballistix modules, and only on Windows (requires installing the Ballistix MOD utility).
-Anyone who would like to contribute code to read temperature directly and/or from other types of RAM like 
-HWMonitor does then would be appreciated.
+Anyone who would like to contribute code to read temperature directly and from other types of RAM (like 
+HWMonitor does) would be appreciated.
 
 * Chassis movement detection
 
@@ -130,6 +131,15 @@ The room motion trigger could in theory be circumvented by cutting power to the 
  from mains power to uninterruptable power supply could be used as a trigger. And cause false positives in a 
  power outage.
 
+Bonus points
+===============
+Anything that increases the time between trigger activation and having your memory ripped out is helpful. Keep your system chassis secure, and tucked away so that doing anything with it requires moving it around and setting off the chassis motion monitor.
+
+Password protect your BIOS to stop someone rebooting straight into a memory analysis CD. 
+
+If your BIOS can be configured to perform a complete memory check on start up, (or even better to wipe memory) then activate those options. Yes it will require a password every time your system boots up and slow the process down, but some level of inconvenience has to be accepted.
+
+Not important, but If your cables allow it you can swap the reset and power switch pins on the motherboard. An attempt to use the reset button to do a hard reset will trigger a standard shutdown instead, which causes Truecrypt to dismount its volumes. 
 
 Linux Installation
 ================
@@ -140,17 +150,14 @@ These packages are required
 
 * [download/unzip lockwatcher]
 
+Initial configuration:
 * sudo setupfiles/setup.sh
 
-Linux Configuration
-================
-sudo src/lockwatcher-gui/lockwatcher-gui.py
+To configure further via GUI:
+* sudo src/lockwatcher-gui/lockwatcher-gui.py
 
 ![Configure further via the GUI](guipicture.png)
 
-
-Running on Linux
-============
 sudo src/lockwatcher.py start
 
 
@@ -162,23 +169,21 @@ Get it here: http://www.ispyconnect.com/download.aspx
 Install it, configure your cameras (covered later).
 
 * Install lockwatcher from the msi, or just extract the .zip somewhere
-
-Windows Configuration and Running
-================
-
 * Run lockwatcher.exe, play with the settings
-* 
+* Click 'Start lockwatcher' on the status panel
 
-Installing + Using remote control
+Using remote control
 ====================
-(I know this is a bit of a pain, hopefully a native app will be up and running for iOS and Android at some point)
+(I know this is a pain in the neck, hopefully a native app will be up and running for iOS and Android at some point)
+You need an email account with smtp and imap access, preferably a throwaway account that you don't use for anything else.
+
 * Install QPython on your Android device
 
-* Go to http://qpython.com/create.php, paste in mobilecontrol.py
+* Go to http://qpython.com/create.php, paste in the mobilecontrol.py code
 
-* Edit emails,password to your liking and add the authentication secret
+* Edit emails,password to your liking and add the authentication secret from the Lockwatcher email settings tab
 
-* Generate the QRCode, scan with QPython on your phone
+* Generate the QRCode on the web page, scan it with QPython on your phone
 
 * Save it as a script
  
@@ -186,13 +191,38 @@ Installing + Using remote control
 
 ![The mobile control interface](mcpicture.png)
 
+Q&A
+============
+Q.Can lockwatcher wipe files instead of just shutting down? 
+
+A.You can add relevant commands to the custom batch script which will be executed on emergency shutdown, but it takes a long time and makes false positive triggers a much bigger problem.
+
+Q.Curse you authoritarian pigdog fascist, I want to use your stuff but it is riddled with government backdoors!
+
+A. You can go through the source code if you want, most of it is written in Python 3 so it isn't even 
+compiled on Linux. The lack of Windows access to Bluetooth sockets (with Python 3, try it if you don't believe me) 
+and user defined Signals means a bit of C code is in the Win32 distribution as little executables, 
+which is what Avast flags as suspicous occasionally. They are easy to compile with cygwin.
+
+Q.When is the Mac version coming out?
+
+A.Either when someone else writes one or when someone buys me a Mac to develop/test it on.
 
 To-do list
 ===========
-The whole qpython thing is a bit of a pain to use: an app could be much nicer
+* Write iOS/Android apps instead of doing the qpython thing
 
-RAM temperature monitoring on Linux. My motherboard won't play nice with decode-dimms and I havent had much luck 
-doing what the ballistix MOD utility does. 
-Also: other types of RAM
+* RAM temperature monitoring on Linux. My motherboard won't play nice with decode-dimms and 
+I haven't had much luck doing what the ballistix MOD utility does. 
+Also: other types of RAM on both operating systems.
 
-Testing and better install configurations for other linux distros
+* Testing and better install configurations for other linux distros
+
+* I'm not happy with the Windows shutdown speed at all, it might be worth implementing RAM erasing instead.
+I can't get firewire attacks to work on Window 7 so whether the shutdown process interrupts 
+RAM aquisition in time or not is a mystery.
+
+* If anyone could write something like this for Android/iOS/etc then please do. The exposure of mobile devices to 
+seizure and aquisition at borders or on arrest, plus their critical reliance on a tiny stable of aquisition tools
+ makes them the most deserving hosts of this kind of tool. Storage wiping would even be handy, but I don't know 
+if it can be done without jailbreaking at the very least.
