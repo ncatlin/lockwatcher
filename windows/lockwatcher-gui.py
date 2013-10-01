@@ -768,7 +768,7 @@ class MainWindow(Frame):
         IMVar = StringVar()
         IMVar.set('Captured key codes appear here')
         self.IMVar = IMVar
-        showKeysBox = Entry(entryFrame,textvariable=IMVar,width=40)
+        showKeysBox = Entry(entryFrame,textvariable=IMVar,width=40,state=DISABLED)
         showKeysBox.pack(side=LEFT, fill=X, expand=YES)
         self.showKeysBox = showKeysBox
         
@@ -1143,9 +1143,22 @@ class MainWindow(Frame):
 
         sdScript = Text(parent,width=65,height=20)
         sdScript.pack(fill=BOTH,expand=YES,pady=5,padx=5)
-        fd = open('sd.bat','r')
-        battext = fd.read()
-        fd.close()
+        
+        if not os.path.exists('sd.bat'):
+            try:
+                fd = open('sd.bat','w')
+                fd.write('::batch script to execute on emergency shutdown')
+                fd.close()
+            except:
+                addMessage('Failed to find or create shutdown batch file in lockwatcher directory')
+            
+        try:
+            fd = open('sd.bat','r')
+            battext = fd.read()
+            fd.close()
+        except:
+            battext = "Failed to open sd.bat"
+            
         sdScript.insert(INSERT,battext)
         self.sdScript = sdScript
         
