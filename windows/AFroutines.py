@@ -34,5 +34,5 @@ def emergency():
     
     #shutdown: force application close, no timeout
     shutdownPath = 'shutdown.exe' #maybe better to find+use full path
-    subprocess.call([shutdownPath,"-s","-t","00","-f"])
+    #subprocess.call([shutdownPath,"-s","-t","00","-f"])
     print('calling shutdown...')

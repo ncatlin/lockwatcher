@@ -1,7 +1,7 @@
 '''
 @author: Nia Catlin
 '''
-import smtplib, time, sys
+import smtplib, time
 import hashlib, hmac, os
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -9,7 +9,6 @@ from email.mime.multipart import MIMEMultipart
 from email import encoders
 from socket import gaierror 
 
-import fileconfig
 from fileconfig import config
 
 #use a HMAC to prevent impersonation/replay
@@ -34,7 +33,7 @@ def validHMAC(code,command):
 
 def doSend(msg):
     try:
-        s = smtplib.SMTP(config['EMAIL']['email_smtp_host'])
+        s = smtplib.SMTP(config['EMAIL']['email_smtp_host'],timeout=4)
         s.login(config['EMAIL']['email_username'], config['EMAIL']['email_password'])
         s.sendmail(msg['To'],config['EMAIL']['alert_email_address'], msg.as_string())
         print('Email Sent')
@@ -65,18 +64,3 @@ def sendEmail(subject,message,attachment=None):
     msg['To'] = config['EMAIL']['ALERT_EMAIL_ADDRESS']
     
     doSend(msg)
-
-        
-        
-    '''
-    
-    if doSend(msg) == True:
-        print('smtp: mail sent with subject "%s"'%subject)
-        return True
-    else:
-        print('send failed %s'%sys.exc_info()[0])
-        return False
-    '''
-        
-    
-        

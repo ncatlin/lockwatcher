@@ -158,8 +158,7 @@ class MainWindow(Frame):
                 'devices' : StringVar(),
                 'netAdaptersIn' : StringVar(),
                 'netAdaptersOut' : StringVar(),
-                'chasCam' : StringVar(),
-                'roomCam' : StringVar(),
+                'cameras' : StringVar(),
                 'email':StringVar()}
     
     def createLogsPanel(self,parent):
@@ -265,22 +264,13 @@ class MainWindow(Frame):
         Frame2.pack(fill=X,expand=YES)
         
         Frame3 = Frame(self.threadFrames)
-        cCamFrame = ttk.LabelFrame(Frame3,text="Chassis motion",name='chasCam')
+        cCamFrame = ttk.LabelFrame(Frame3,text="Camera monitors",name='cameras')
         cCamFrame.pack(side=LEFT,padx=5)
         cCamFrame.bind('<Button-3>',self.rClick,add='')
-        cCamLabel = Label(cCamFrame,textvariable=self.threadStatus['chasCam'],width=26,name='chasCam')
+        cCamLabel = Label(cCamFrame,textvariable=self.threadStatus['cameras'],width=26,name='cameras')
         cCamLabel.pack()
         cCamLabel.bind('<Button-3>',self.rClick,add='')
         self.scCamLabel = cCamLabel
-        
-        rCamFrame = ttk.LabelFrame(Frame3,text="Room motion",name='roomCam')
-        rCamFrame.pack(side=RIGHT,padx=5)
-        rCamFrame.bind('<Button-3>',self.rClick,add='')
-        rCamLabel = Label(rCamFrame,textvariable=self.threadStatus['roomCam'],width=26,name='roomCam')
-        rCamLabel.pack()
-        rCamLabel.bind('<Button-3>',self.rClick,add='')
-        self.srCamLabel = rCamLabel
-        Frame3.pack()
         
         Frame4 = Frame(self.threadFrames)
         NAFrame = ttk.LabelFrame(Frame4,text="Network adapter",name='naFrame')
@@ -383,7 +373,7 @@ class MainWindow(Frame):
             newColour = 'green'
         elif '...' in triggerText:
             newColour = 'orange'
-        elif triggerText == 'Not Started':
+        elif 'Not Started' in triggerText :
             newColour = 'black'
         else:
             newColour = 'red'
@@ -401,10 +391,8 @@ class MainWindow(Frame):
                 self.sNAInLabel.config(fg=newColour)
             elif triggerName == 'netAdaptersOut':
                 self.sNAOutLabel.config(fg=newColour)
-            elif triggerName == 'chasCam':
-                self.scCamLabel.config(fg=newColour)
-            elif triggerName == 'roomCam':
-                self.srCamLabel.config(fg=newColour)    
+            elif triggerName == 'cameras':
+                self.scCamLabel.config(fg=newColour)  
             elif triggerName == 'email':
                 self.sEmailLabel.config(fg=newColour)
             else:
@@ -422,7 +410,7 @@ class MainWindow(Frame):
             self.sStatusText.set("Lockwatcher is active")
             self.sButtonText.set("Stop lockwatcher")
             
-            devdetect.createMonitor(self.threadStatus,self.addMessage)
+            devdetect.createLockwatcher(self.threadStatus,self.addMessage)
             devdetect.monitorThread.start()
 
             self.threadFrames.pack(pady=20)

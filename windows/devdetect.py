@@ -128,6 +128,7 @@ class deviceMonitor(threading.Thread):
             eventHandle('E_DEVICE',"Device Monitor (%s)"%deviceMessages[event.EventType])
             
         CoUninitialize ()
+        eventQueue.put(("Status",'devices',"Not Active"))
     def terminate(self):
         self.running = False   
 
@@ -189,8 +190,8 @@ class emailMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.name = "mailMonThread"
+        self.running = True
     def run(self):
-        return
         eventQueue.put(("Status",'email','Connecting to server...'))
         try:
             server = setupIMAP()
@@ -204,6 +205,13 @@ class emailMonitor(threading.Thread):
         server.idle()
 
         connectionFails = 0
+        
+        #dont seem to get an exception when connection attempt interrupted by user
+        #this checks if 'stop' was pressed during the connecting phase
+        if self.running == False:
+            eventQueue.put(("Status",'email','Not Active'))
+            return
+        
         eventQueue.put(("Status",'email','Active'))
         self.running = True
         while self.running == True:
@@ -212,6 +220,7 @@ class emailMonitor(threading.Thread):
                 seqid = server.idle_check(840)
             except ValueError:
                 if self.running == False: #terminate() was called
+                    eventQueue.put(("Status",'email','Not Active')) 
                     return
             if seqid == []: #no mail
                 try:
@@ -243,15 +252,17 @@ class emailMonitor(threading.Thread):
             if keys[2][0][2] == 'niasphone':
                 eventQueue.put(("Mail",keys[1]))
             else:
-                print("Got an email, unknown addressee: %s"%keys[2][0][2])   
-                
+                print("Got an email, unknown addressee: %s"%keys[2][0][2]) 
+                 
+        eventQueue.put(("Status",'email','Not Active'))        
     def terminate(self):
         self.running = False
+        print('trying server logout')
         try:
             self.server.logout()
         except:
             pass
-        eventQueue.put(("Status",'email','Not Active'))
+        
      
 
 '''triggers the killswitch if the reported RAM temperature falls below RAM_TRIGGER_TEMP#
@@ -283,9 +294,12 @@ class RAMMonitor(threading.Thread):
                 eventHandle('E_TEMPERATURE',"Low RAM temperature")
             time.sleep(1) #the MOD logger only writes once per second
             
+        eventQueue.put(("Status",'ram',"Not Active"))    
     def terminate(self):
         self.running=False
-
+        
+        
+'''
 #detect chassis intrusion detection switch activation
 class chasisMonitor(threading.Thread):
     def __init__(self):
@@ -311,7 +325,8 @@ class chasisMonitor(threading.Thread):
         CoUninitialize()
     def terminate(self):
         self.running = False
-
+'''
+        
 #share?
 #import win32wnet, win32netcon, hardwareconfig
 class BTMonitor(threading.Thread):
@@ -354,10 +369,12 @@ class BTMonitor(threading.Thread):
                     eventHandle('E_BLUETOOTH',"Bluetooth connection lost")
                     return
                 
+        eventQueue.put(("Status",'bluetooth','Not Active'))       
     def terminate(self):
         self.running = False
         if self.socket != None:
             winsockbtooth.closesocket(self.socket)
+        
         
 
 #detect network cable removal or wifi AP loss
@@ -384,6 +401,7 @@ class adapterDisconnectMonitor(threading.Thread):
             eventHandle('E_NET_CABLE_OUT',"Net adapter %s lost connection"%event.InstanceName)
             
         CoUninitialize()
+        eventQueue.put(("Status",'netAdaptersOut','Disconnect: Not Active'))
     def terminate(self):
         self.running = False   
                     
@@ -411,8 +429,10 @@ class adapterConnectMonitor(threading.Thread):
             eventHandle('E_NET_CABLE_IN',"net adapter %s gained connection"%event.InstanceName)    
             
         CoUninitialize()
+        eventQueue.put(("Status",'netAdaptersIn','Connect: Not Active')) 
     def terminate(self):
         self.running = False        
+        
 
 #detect new network cable inserted
 import socket
@@ -426,19 +446,12 @@ class cameraMonitor(threading.Thread):
             s.bind( ('127.0.0.1', 22190) )
             self.socket = s
         except:
-            eventQueue.put(("Status",'roomCam',"Can't bind socket 22190\nIs another lockwatcher running?"))
-            eventQueue.put(("Status",'chasCam',"Can't bind socket 22190\nIs another lockwatcher running?"))
+            eventQueue.put(("Status",'cameras',"Can't bind socket 22190\nIs another lockwatcher running?"))
             print('Camera listen exception')
             return
         
-        if fileconfig.isActive('E_CHASSIS_MOTION')[0] != 'False':
-            eventQueue.put(("Status",'chasCam',"Active"))
-        else: eventQueue.put(("Status",'chasCam',"Not Active"))
-        
-        if fileconfig.isActive('E_ROOM_MOTION')[0] != 'False':
-            eventQueue.put(("Status",'roomCam',"Active"))
-        else: eventQueue.put(("Status",'roomCam',"Not Active"))
-        
+        eventQueue.put(("Status",'cameras',"Active"))
+
         self.running = True
         while self.running == True:
             try:
@@ -457,11 +470,14 @@ class cameraMonitor(threading.Thread):
                         
             elif data == '2':
                     if fileconfig.isActive('E_ROOM_MOTION')[0] != 'False':
-                        eventHandle('E_ROOM_MOTION',"Room camera motion detected")    
+                        eventHandle('E_ROOM_MOTION',"Room camera motion detected") 
+                        
+        eventQueue.put(("Status",'cameras',"Not Active"))   
     def terminate(self):
         self.running = False 
         self.socket.shutdown(socket.SHUT_RD)
         self.socket.close()
+        
 
 import win32api     
 class keyboardMonitor(threading.Thread):
@@ -502,8 +518,11 @@ class keyboardMonitor(threading.Thread):
                             if keyState == False: break
                         else:
                             eventHandle('E_KILL_SWITCH',"Kill switch pressed")
+                            
+        eventQueue.put(("Status",'killSwitch',"Not Active"))
     def terminate(self):
         self.listening = False
+        
 
 REMOTE_LOCK = 1
 REMOTE_STARTMONITOR = 2
@@ -543,13 +562,72 @@ def executeRemoteCommand(command):
         
     elif command == REMOTE_SHUTDOWN:
         sendEmail("Command successful","Shutting down...")
-        print("Standard shutdown due to remote command")
         AFroutines.standardShutdown()
         
     elif command == REMOTE_KILLSWITCH:
-        print("Emergency shutdown due to remote command")
-        reason = "Remote shutdown command received"
-        #AFroutines.antiforensicShutdown(reason,lockState)
+        AFroutines.emergency()
+
+#this is a travesty
+trigMonitorMap = {'bluetooth': 'BTMonitor',
+                'killSwitch' : 'keyboardMonitor',
+                'ram' : 'RAMMonitor',
+                'cameras': 'cameraMonitor',
+                'netAdaptersIn' : 'adapterConnectMonitor',
+                'netAdaptersOut' : 'adapterDisconnectMonitor',
+                'email':'email'}
+
+trigEventMap = {'bluetooth': 'E_BLUETOOTH',
+                'killSwitch' : 'E_KILL_SWITCH',
+                'ram' : 'E_TEMPERATURE',
+                'devices' : 'E_DEVICE',
+                'netAdaptersIn' : 'E_NET_CABLE_IN',
+                'netAdaptersOut' : 'E_NET_CABLE_OUT',
+                'chasCam' : 'E_CHASSIS_MOTION',
+                'roomCam' : 'E_ROOM_MOTION',
+                'email':'email'}
+
+def startMonitor(threadDict,trigger):
+            if trigger == 'E_DEVICE':
+                threadDict['deviceMonitor'] = deviceMonitor()   
+                threadDict['deviceMonitor'].start()
+                
+                threadDict['volumeMonitor'] = volumeMonitor()
+                threadDict['volumeMonitor'].start()
+                threadDict['logicalDiskRemoveMonitor'] = logicalDiskRemoveMonitor()
+                threadDict['logicalDiskRemoveMonitor'].start()
+                threadDict['logicalDiskCreateMonitor'] = logicalDiskCreateMonitor()
+                threadDict['logicalDiskCreateMonitor'].start()
+                #threadDict['logicalDeviceMonitor'] = LogicalDeviceMonitor()
+            elif trigger == 'E_INTRUSION' :
+                #threadDict['chasisMonitor'] = chasisMonitor()
+                pass
+            elif trigger == 'E_NET_CABLE_IN' :
+                threadDict['adapterConnectMonitor'] = adapterConnectMonitor()   
+                threadDict['adapterConnectMonitor'].start()    
+            elif trigger == 'E_NET_CABLE_OUT' :
+                threadDict['adapterDisconnectMonitor'] = adapterDisconnectMonitor() 
+                threadDict['adapterDisconnectMonitor'].start()       
+            elif trigger == 'E_TEMPERATURE':
+                threadDict['RAMMonitor'] = RAMMonitor()    
+                threadDict['RAMMonitor'].start()
+            elif trigger == 'E_BLUETOOTH':
+                threadDict['BTMonitor'] = BTMonitor() 
+                threadDict['BTMonitor'].start()             
+            elif trigger == 'E_CHASSIS_MOTION':
+                if 'cameraMonitor' not in threadDict.keys():
+                    threadDict['cameraMonitor'] = cameraMonitor()  
+                    threadDict['cameraMonitor'].start()   
+            elif trigger == 'E_ROOM_MOTION':
+                if 'cameraMonitor' not in threadDict.keys():
+                    threadDict['cameraMonitor'] = cameraMonitor()
+                    threadDict['cameraMonitor'].start()
+            elif trigger == 'E_KILL_SWITCH':
+                threadDict['keyboardMonitor'] = keyboardMonitor()
+                threadDict['keyboardMonitor'].start()
+            elif trigger == 'email':
+                threadDict['email'] = emailMonitor()    
+                threadDict['email'].start()
+
 
 import os       
 class lockwatcher(threading.Thread):
@@ -570,63 +648,34 @@ class lockwatcher(threading.Thread):
         threadDict = {}
         
         for trigger in ACTIVE:
-            if trigger == 'E_DEVICE':
-                threadDict['deviceMonitor'] = deviceMonitor()   
-                #threadDict['logicalDeviceMonitor'] = LogicalDeviceMonitor()
-                threadDict['volumeMonitor'] = volumeMonitor()
-                threadDict['logicalDiskRemoveMonitor'] = logicalDiskRemoveMonitor()
-                threadDict['logicalDiskCreateMonitor'] = logicalDiskCreateMonitor()
-                pass
-                
-            elif trigger == 'E_INTRUSION' :
-                #threadDict['chasisMonitor'] = chasisMonitor()
-                pass
-                
-            elif trigger == 'E_NET_CABLE_IN' :
-                threadDict['adapterConnectMonitor'] = adapterConnectMonitor()       
-                     
-            elif trigger == 'E_NET_CABLE_OUT' :
-                threadDict['adapterDisconnectMonitor'] = adapterDisconnectMonitor()        
-        
-            elif trigger == 'E_TEMPERATURE':
-                threadDict['RAMMonitor'] = RAMMonitor()  
-                
-            elif trigger == 'E_BLUETOOTH':
-                threadDict['BTMonitor'] = BTMonitor()                  
+            startMonitor(threadDict,trigger)
 
-            elif trigger == 'E_CHASSIS_MOTION':
-                if 'cameraMonitor' not in threadDict.keys():
-                    threadDict['cameraMonitor'] = cameraMonitor() 
-                    
-            elif trigger == 'E_ROOM_MOTION':
-                if 'cameraMonitor' not in threadDict.keys():
-                    threadDict['cameraMonitor'] = cameraMonitor()           
-
-            elif trigger == 'E_KILL_SWITCH':
-                    threadDict['keyboardMonitor'] = keyboardMonitor()            
-        
         if fileconfig.config['EMAIL']['ENABLE_REMOTE'] == 'True':
-            threadDict['Email'] = emailMonitor()
+            startMonitor(threadDict,'email')
         
-        for thread in threadDict.values():
-            thread.start()
-        
-        
-        #csEventcMonitor().start()
         badCommands = 0
         shutdownActivated = False
         while True:
             event = eventQueue.get(block=True, timeout=None)
-            if event[0] == 'Kill':
+            eventType = event[0]
+            if eventType == 'Kill':
+                eventReason = event[1]
                 #don't trigger multiple shutdowns but keep logging while we can
                 if shutdownActivated == False: 
                     shutdownActivated = True
-                    #send email if needed
-                    #write log
+                    
+                    if fileconfig.config['EMAIL']['email_alert'] == 'True' and \
+                        'Kill switch' not in eventReason:
+                        try:
+                            #has a 4 second timeout for blocking operations
+                            sendEmail('Emergency shutdown triggered',eventReason)
+                            print('email sent')
+                        except:
+                            pass #email failed, oh well. 
                     AFroutines.emergency()
-            elif event[0] == 'Status':
+            elif eventType == 'Status':
                 self.statuses[event[1]].set(event[2])
-            elif event[0] == 'Log':
+            elif eventType == 'Log':
                 logPath = fileconfig.config['TRIGGERS']['logfile']
                 try:
                     fd = open(logPath,'a+')
@@ -636,8 +685,9 @@ class lockwatcher(threading.Thread):
                     print('failed to write log')
                 self.msgAdd(event[1])
                 
-            elif event[0] == 'stop':
+            elif eventType == 'stop':
                 for tname,thread in threadDict.items():
+                    if thread == None: continue
                     if thread.is_alive(): 
                         if tname == 'logicalDeviceMonitor': print('ldevm alive, terminating')
                         thread.terminate()
@@ -646,17 +696,31 @@ class lockwatcher(threading.Thread):
                 time.sleep(1)
                 return
             
-            elif event[0] == 'startMonitor':
+            elif eventType == 'startMonitor':
                 for monitor in event[1]:
                     print('starting monitor',monitor)
-                return
+                    if monitor not in threadDict or threadDict[monitor] == None or \
+                        threadDict[monitor].is_alive() == False:
+                        startMonitor(threadDict,trigEventMap[monitor])
+                        
             
-            elif event[0] == 'stopMonitor':
+            elif eventType == 'stopMonitor':
                 for monitor in event[1]:
                     print('stop monitor',monitor)
-                return
+                    
+                    if monitor == 'devices':
+                        threadnames = ['deviceMonitor','volumeMonitor',
+                                       'logicalDiskRemoveMonitor','logicalDiskCreateMonitor']
+                    else:
+                        threadnames = [trigMonitorMap[monitor]]
+                        
+                    for threadname in threadnames:
+                        if threadname in threadDict and threadDict[threadname] != None \
+                            and threadDict[threadname].is_alive():
+                            threadDict[threadname].terminate()
+                            threadDict[threadname] = None
             
-            elif event[0] == 'Mail':
+            elif eventType == 'Mail':
                 command, code = event[1].split(' ')
                 self.msgAdd('Received mail %s %s'%(command,code))
                 command = int(command)
@@ -681,7 +745,7 @@ class lockwatcher(threading.Thread):
                 self.msgAdd('otherevent'+event)
                 
 monitorThread = None
-def createMonitor(statuses,msgAddFunc):
+def createLockwatcher(statuses,msgAddFunc):
     global monitorThread
     
     if monitorThread != None:
@@ -689,4 +753,3 @@ def createMonitor(statuses,msgAddFunc):
             print('cant restart running monitorthread')
         
     monitorThread = lockwatcher(statuses,msgAddFunc)
-
