@@ -1,5 +1,5 @@
 '''
-forensicDetect.py
+devdetect.py
 
 Runs a group of threads which monitor for potential forensic-related system events
 and trigger the antiforensic module if the screen is locked
@@ -16,7 +16,10 @@ import AFroutines
 import winsockbtooth, imapclient, sendemail
 import fileconfig, hardwareconfig
 
+from pythoncom import CoInitialize, CoUninitialize
+
 eventQueue = None
+allStop = False
 
 lockedStateText = {True:'Locked',False:'Not Locked'}
 def eventHandle(event_type,eventReason):
@@ -25,10 +28,10 @@ def eventHandle(event_type,eventReason):
     
     if (event_type in fileconfig.config['TRIGGERS']['ALWAYSTRIGGERS'].split(',')) or \
         (event_type in fileconfig.config['TRIGGERS']['LOCKEDTRIGGERS'].split(',') and locked == True):
-        eventQueue.put(("Log","[%s] Trigger activated. %s"%(lockedStateText[locked],eventReason)))
+        eventQueue.put(("Log","[%s - Trigger activated]. %s"%(lockedStateText[locked],eventReason)))
         eventQueue.put(("Kill",eventReason))
     else:
-        eventQueue.put(("Log","[%s] Trigger ignored. %s"%(lockedStateText[locked],eventReason)))
+        eventQueue.put(("Log","[%s - Trigger ignored]. %s"%(lockedStateText[locked],eventReason)))
     
 
 #check for logical disk events like cdrom insertion          
@@ -37,7 +40,7 @@ class logicalDiskCreateMonitor(threading.Thread):
         threading.Thread.__init__(self)
         self.name = 'LDMMonitorCreate'
     def run(self):
-        pythoncom.CoInitialize()
+        CoInitialize()
         self.c = wmi.WMI()
         self.watcher = self.c.Win32_LogicalDisk.watch_for("creation") #deletion too?
         self.running = True
@@ -47,7 +50,8 @@ class logicalDiskCreateMonitor(threading.Thread):
             except wmi.x_wmi_timed_out:
                 continue
             #if event.DriveType in disksOfInterest: 
-            eventHandle("Logical disk creation (Drive Name: '%s', Drive type: '%s')"%(event.DeviceID,event.Description))
+            eventHandle('E_DEVICE',"Logical disk creation (Drive Name: '%s', Drive type: '%s')"%(event.DeviceID,event.Description))
+        CoUninitialize()
     def terminate(self):
         self.running = False   
         
@@ -57,7 +61,7 @@ class logicalDiskRemoveMonitor(threading.Thread):
         threading.Thread.__init__(self)
         self.name = 'LDMMonitorRemove'
     def run(self):
-        pythoncom.CoInitialize()
+        CoInitialize()
         self.c = wmi.WMI()
         self.watcher = self.c.Win32_LogicalDisk.watch_for("deletion") #operation might be a bit strong
         disksOfInterest = [2,5,6] #removable,cdrom,ramdisk
@@ -69,7 +73,8 @@ class logicalDiskRemoveMonitor(threading.Thread):
             except wmi.x_wmi_timed_out:
                 continue
             #if event.DriveType in disksOfInterest: 
-            eventHandle("Logical disk deletion (Drive Name: '%s', Drive type: '%s')"%(event.DeviceID,event.Description))
+            eventHandle('E_DEVICE',"Logical disk deletion (Drive Name: '%s', Drive type: '%s')"%(event.DeviceID,event.Description))
+        CoUninitialize()
     def terminate(self):
         self.running = False   
 
@@ -78,13 +83,14 @@ deviceMessages = {
            2:'Device Arrival',
            3:'Device Removal',
            4:'Docking'}       
+
 #check for addition/removal of lettered storage volumes           
 class volumeMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.name = 'VolumeMonitor'
     def run(self):
-        pythoncom.CoInitialize()
+        CoInitialize()
         self.c = wmi.WMI()
         self.watcher = self.c.Win32_VolumeChangeEvent.watch_for()
         
@@ -94,7 +100,9 @@ class volumeMonitor(threading.Thread):
                 event = self.watcher(timeout_ms=2000)
             except wmi.x_wmi_timed_out:
                 continue
-            eventHandle("Volume Monitor (Drive: '%s' Event: '%s')"%(event.DriveName,deviceMessages[event.EventType]))
+            eventHandle('E_DEVICE',"Volume Monitor (Drive: '%s' Event: '%s')"%(event.DriveName,deviceMessages[event.EventType]))
+            
+        CoUninitialize() 
     def terminate(self):
         self.running = False   
 
@@ -105,11 +113,11 @@ class deviceMonitor(threading.Thread):
         threading.Thread.__init__(self)
         self.name = 'DeviceMonitor'
     def run(self):
-        pythoncom.CoInitialize()
+        CoInitialize()
 
         self.c = wmi.WMI()
         self.watcher = self.c.Win32_SystemConfigurationChangeEvent.watch_for() #called before devicechangeevent
-        eventQueue.put(("Status",'Devices',"Active"))
+        eventQueue.put(("Status",'devices',"Active"))
         
         self.running = True
         while self.running == True:
@@ -117,25 +125,39 @@ class deviceMonitor(threading.Thread):
                 event = self.watcher(timeout_ms=2000)
             except wmi.x_wmi_timed_out:
                 continue
-            eventHandle("Device Monitor (%s)"%deviceMessages[event.EventType])
+            eventHandle('E_DEVICE',"Device Monitor (%s)"%deviceMessages[event.EventType])
+            
+        CoUninitialize ()
     def terminate(self):
         self.running = False   
 
-#this always fires after the device monitor so only really useful for logs
+lDevMonStop = False
+#This always fires after the device monitor so only really useful for more verbose logs
+#containing name/manufacturer etc of the devies that were plugged in
+'''
+#bug: actually this seems to wreck my operating system after a few starts and stops -
+#    consent.exe hangs, cant open services.msc due to error 0x80041003, other bad things
+#disabling it because it doesn't make lockwatcher work any better
+'''
 class LogicalDeviceMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.name='LogicalDeviceMonitor'
+        global lDevMonStop
+        lDevMonStop = False
     def run(self):
-        pythoncom.CoInitialize()
+        print('ldevmon start')
+        CoInitialize()
         self.c = wmi.WMI()
         self.watcher = self.c.CIM_LogicalDevice.watch_for('creation') #deletion too?
-        self.running = True
-        while self.running == True:
+        
+        #using self.running fails to terminate it most of the time - no idea why
+        while lDevMonStop == False: 
             try:
-                event = self.watcher(timeout_ms=2000)
+                event = self.watcher(timeout_ms=1000)
             except wmi.x_wmi_timed_out:
                 continue
+            
             if event.Name != 'USB Composite Device': #not helpful in logs
                 details = {}
                 if hasattr(event,'Name'): details['Name']= event.Name
@@ -148,9 +170,13 @@ class LogicalDeviceMonitor(threading.Thread):
                     eventString = eventString + "%s: %s. "%(name,value)
                 
                 #creates a wall of horrible text, so add some whitespace
-                eventHandle("Logical Device addition. \n\t%s\n"%eventString)
+                eventHandle('E_DEVICE',"Logical Device addition. \n\t%s\n"%eventString)
+                
+        CoUninitialize()
+                
     def terminate(self):
-        self.running = False
+        global lDevMonStop
+        lDevMonStop = True
 
 def setupIMAP():
     server = imapclient.IMAPClient(fileconfig.config['EMAIL']['email_imap_host'], use_uid=False, ssl=True)
@@ -165,20 +191,20 @@ class emailMonitor(threading.Thread):
         self.name = "mailMonThread"
     def run(self):
         return
-        eventQueue.put(("Status",'Email','Connecting to server...'))
+        eventQueue.put(("Status",'email','Connecting to server...'))
         try:
             server = setupIMAP()
         except socket.gaierror:
-            eventQueue.put(("Status",'Email',"Error: Connect Failed")) 
+            eventQueue.put(("Status",'email',"Error: Connect Failed")) 
             return
         except IMAPClient.Error as err:
-            eventQueue.put(("Status",'Email',err.args[0].decode()))
+            eventQueue.put(("Status",'email',err.args[0].decode()))
             return
         self.server = server
         server.idle()
 
         connectionFails = 0
-        eventQueue.put(("Status",'Email','Active'))
+        eventQueue.put(("Status",'email','Active'))
         self.running = True
         while self.running == True:
             #refresh the connection every 14 mins so it doesnt timeout
@@ -193,16 +219,16 @@ class emailMonitor(threading.Thread):
                     server.idle()
                     connectionFails = 0
                 except:
-                    eventQueue.put(("Status",'Email','Attempting reconnect attempt %s'%(connectionFails)))
+                    eventQueue.put(("Status",'email','Attempting reconnect attempt %s'%(connectionFails)))
                     time.sleep(connectionFails * 3)
                     connectionFails += 1
                     if connectionFails >= 3:
-                        eventQueue.put(("Status",'Email','Error: Too many failed attempts'))
+                        eventQueue.put(("Status",'email','Error: Too many failed attempts'))
                         return
                     try:
                         server = setupIMAP()
                     except socket.gaierror:
-                        eventQueue.put(("Status",'Email',"Error: Connect Failed")) 
+                        eventQueue.put(("Status",'email',"Error: Connect Failed")) 
                         return
                     self.server = server
                     server.idle()
@@ -225,39 +251,20 @@ class emailMonitor(threading.Thread):
             self.server.logout()
         except:
             pass
-        eventQueue.put(("Status",'Email','Not Active'))
+        eventQueue.put(("Status",'email','Not Active'))
+     
 
+'''triggers the killswitch if the reported RAM temperature falls below RAM_TRIGGER_TEMP#
 
-class otherMonitor(threading.Thread):
-    def __init__(self):
-        threading.Thread.__init__(self)
-        self.name='othermonitor'
-    def run(self):
-        pythoncom.CoInitialize()
-        self.c = wmi.WMI()
-        self.watcher = self.c.CIM_DeviceConnection.watch_for()
-        self.running = True
-        while self.running == True:
-            event = self.watcher()
-            eventHandle("deviceconnection: %s"%event)
-            eventQueue.put(("Log","deviceconnection: %s"%event))
-    def terminate(self):
-        self.running = False
-
-
-        
-
-#triggers the killswitch if the reported RAM temperature falls below RAM_TRIGGER_TEMP#
-#
-#requires the Ballistix MOD program to be generating a logfile in the specified location
-#would be much improved by reading the temperatures straight from the SPD interface
+requires the Ballistix MOD program to be generating a logfile in the specified location
+would be much improved by reading the temperatures straight from the SPD interface'''
 class RAMMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.name = 'RAM Monitor'
     def run(self):
         self.running = True
-        eventQueue.put(("Status",'RAM',"Active"))
+        eventQueue.put(("Status",'ram',"Active"))
         while self.running == True:
             try:
                 csvfile = open(fileconfig.config['TRIGGERS']['BALLISTIX_LOG_FILE'],mode='rb')
@@ -273,19 +280,19 @@ class RAMMonitor(threading.Thread):
             csvfile.close()
             RAMTemp = line.decode("utf-8").split(',')[2]
             if float(RAMTemp) <= float(fileconfig.config['TRIGGERS']['low_temp']):  
-                eventHandle("Low RAM temperature")
+                eventHandle('E_TEMPERATURE',"Low RAM temperature")
             time.sleep(1) #the MOD logger only writes once per second
             
     def terminate(self):
         self.running=False
 
-#detect device insertion/removal
+#detect chassis intrusion detection switch activation
 class chasisMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.name = 'IntrusionSwitch'
     def run(self):
-        pythoncom.CoInitialize()
+        CoInitialize()
 
         self.c = wmi.WMI()
         self.watcher = self.c.Win32_SystemEnclosure.watch_for()
@@ -297,14 +304,16 @@ class chasisMonitor(threading.Thread):
                 continue
             
             if event.BreachDescription != None:
-                eventHandle("Breach detected %s"%event.BreachDescription)
+                eventHandle('E_INTRUSION',"Breach detected %s"%event.BreachDescription)
             else:
                 print("system enclosure event: ",event)
+        
+        CoUninitialize()
     def terminate(self):
         self.running = False
 
 #share?
-import win32wnet, win32netcon, hardwareconfig
+#import win32wnet, win32netcon, hardwareconfig
 class BTMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
@@ -312,7 +321,7 @@ class BTMonitor(threading.Thread):
         self.socket = None
     def run(self):
         self.running = True
-        eventQueue.put(("Status",'Bluetooth','Connecting to device...'))
+        eventQueue.put(("Status",'bluetooth','Connecting to device...'))
 
         deviceIDStr = fileconfig.config['TRIGGERS']['bluetooth_device_id']
         deviceID = hardwareconfig.BTStrToHex(deviceIDStr)
@@ -321,14 +330,14 @@ class BTMonitor(threading.Thread):
         if error == True:
             if result == 10060:
                 print("Bluetooth: Error 10060: Couldn't connect")
-                eventQueue.put(("Status",'Bluetooth',"Error: Connect failed"))
+                eventQueue.put(("Status",'bluetooth',"Error: Connect failed"))
                 eventQueue.put(("Log",'Bluetooth: Could not connect to %s'%deviceIDStr))
             elif result == 10050:
                 print("Bluetooth: Error 10050: No bluetooth enabled")
-                eventQueue.put(("Status",'Bluetooth',"Error: No bLuetooth"))
+                eventQueue.put(("Status",'bluetooth',"Error: No bLuetooth"))
             else:
                 print('Bluetooth: other error: %s'%result)
-                eventQueue.put(("Status",'Bluetooth','Error: %s'%result))
+                eventQueue.put(("Status",'bluetooth','Error: %s'%result))
             return 
         
         self.socket = result
@@ -337,12 +346,12 @@ class BTMonitor(threading.Thread):
             error,result=winsockbtooth.recv(self.socket)
             if error == True:
                     if self.running == False: 
-                        eventQueue.put(("Status",'Bluetooth','Not Active'))
+                        eventQueue.put(("Status",'bluetooth','Not Active'))
                         return #lockwatcher stopped
                     #todo: add some (if locked_trigger and not_locked, wait on reconnect) code
                     print(' error:%s..'%result)
                     print('Connection to BT Dev lost')
-                    eventHandle("Bluetooth connection lost")
+                    eventHandle('E_BLUETOOTH',"Bluetooth connection lost")
                     return
                 
     def terminate(self):
@@ -358,13 +367,13 @@ class adapterDisconnectMonitor(threading.Thread):
         self.name = 'AdapterDisconnect'
     def run(self):
         try:
-            pythoncom.CoInitialize()
+            CoInitialize()
             self.c = wmi.WMI(moniker="//./root/WMI")
             self.watcher = self.c.MSNdis_StatusMediaDisconnect.watch_for()
         except:
-            eventQueue.put(("Status",'NetAdaptersOut','Disconnect: WMI Error'))
+            eventQueue.put(("Status",'netAdaptersOut','Disconnect: WMI Error'))
             return
-        eventQueue.put(("Status",'NetAdaptersOut','Disconnect: Active'))
+        eventQueue.put(("Status",'netAdaptersOut','Disconnect: Active'))
         
         self.running = True
         while self.running == True:
@@ -372,7 +381,9 @@ class adapterDisconnectMonitor(threading.Thread):
                 event = self.watcher(timeout_ms=2000)
             except wmi.x_wmi_timed_out:
                 continue
-            eventHandle("Net adapter %s lost connection"%event.InstanceName)
+            eventHandle('E_NET_CABLE_OUT',"Net adapter %s lost connection"%event.InstanceName)
+            
+        CoUninitialize()
     def terminate(self):
         self.running = False   
                     
@@ -383,21 +394,23 @@ class adapterConnectMonitor(threading.Thread):
         self.name = 'AdapterConnect'
     def run(self):
         try:
-            pythoncom.CoInitialize()
+            CoInitialize()
             self.c = wmi.WMI(moniker="//./root/WMI")
             self.watcher = self.c.MSNdis_StatusMediaConnect.watch_for()
         except:
-            eventQueue.put(("Status",'NetAdaptersIn','Connect: WMI Error'))
+            eventQueue.put(("Status",'netAdaptersIn','Connect: WMI Error'))
             return
             
-        eventQueue.put(("Status",'NetAdaptersIn','Connect: Active'))
+        eventQueue.put(("Status",'netAdaptersIn','Connect: Active'))
         self.running = True
         while self.running == True:
             try:
                 event = self.watcher(timeout_ms=2000)
             except wmi.x_wmi_timed_out:
                 continue
-            eventHandle("net adapter %s gained connection"%event.InstanceName)    
+            eventHandle('E_NET_CABLE_IN',"net adapter %s gained connection"%event.InstanceName)    
+            
+        CoUninitialize()
     def terminate(self):
         self.running = False        
 
@@ -413,18 +426,18 @@ class cameraMonitor(threading.Thread):
             s.bind( ('127.0.0.1', 22190) )
             self.socket = s
         except:
-            eventQueue.put(("Status",'RoomCam',"Can't bind socket 22190"))
-            eventQueue.put(("Status",'ChasCam',"Can't bind socket 22190"))
+            eventQueue.put(("Status",'roomCam',"Can't bind socket 22190\nIs another lockwatcher running?"))
+            eventQueue.put(("Status",'chasCam',"Can't bind socket 22190\nIs another lockwatcher running?"))
             print('Camera listen exception')
             return
         
         if fileconfig.isActive('E_CHASSIS_MOTION')[0] != 'False':
-            eventQueue.put(("Status",'ChasCam',"Active"))
-        else: eventQueue.put(("Status",'ChasCam',"Not Active"))
+            eventQueue.put(("Status",'chasCam',"Active"))
+        else: eventQueue.put(("Status",'chasCam',"Not Active"))
         
         if fileconfig.isActive('E_ROOM_MOTION')[0] != 'False':
-            eventQueue.put(("Status",'RoomCam',"Active"))
-        else: eventQueue.put(("Status",'RoomCam',"Not Active"))
+            eventQueue.put(("Status",'roomCam',"Active"))
+        else: eventQueue.put(("Status",'roomCam',"Not Active"))
         
         self.running = True
         while self.running == True:
@@ -440,11 +453,11 @@ class cameraMonitor(threading.Thread):
             
             if data == '1':
                     if fileconfig.isActive('E_CHASSIS_MOTION')[0] != 'False':
-                        eventHandle("Chassis camera motion detected") 
+                        eventHandle('E_CHASSIS_MOTION',"Chassis camera motion detected") 
                         
             elif data == '2':
                     if fileconfig.isActive('E_ROOM_MOTION')[0] != 'False':
-                        eventHandle("Room camera motion detected")    
+                        eventHandle('E_ROOM_MOTION',"Room camera motion detected")    
     def terminate(self):
         self.running = False 
         self.socket.shutdown(socket.SHUT_RD)
@@ -464,7 +477,7 @@ class keyboardMonitor(threading.Thread):
             killKeys[int(key)] = False
         
         self.listening = True
-        eventQueue.put(("Status",'KillSwitch',"Active"))
+        eventQueue.put(("Status",'killSwitch',"Active"))
         while self.listening == True:
             time.sleep(0.002)
             
@@ -559,14 +572,15 @@ class lockwatcher(threading.Thread):
         for trigger in ACTIVE:
             if trigger == 'E_DEVICE':
                 threadDict['deviceMonitor'] = deviceMonitor()   
-                threadDict['logicalDeviceMonitor'] = LogicalDeviceMonitor()
+                #threadDict['logicalDeviceMonitor'] = LogicalDeviceMonitor()
                 threadDict['volumeMonitor'] = volumeMonitor()
                 threadDict['logicalDiskRemoveMonitor'] = logicalDiskRemoveMonitor()
                 threadDict['logicalDiskCreateMonitor'] = logicalDiskCreateMonitor()
-                #threadDict['othermonitor'] = otherMonitor()
+                pass
                 
             elif trigger == 'E_INTRUSION' :
-                threadDict['chasisMonitor'] = chasisMonitor()
+                #threadDict['chasisMonitor'] = chasisMonitor()
+                pass
                 
             elif trigger == 'E_NET_CABLE_IN' :
                 threadDict['adapterConnectMonitor'] = adapterConnectMonitor()       
@@ -595,7 +609,6 @@ class lockwatcher(threading.Thread):
             threadDict['Email'] = emailMonitor()
         
         for thread in threadDict.values():
-            thread.daemon = True
             thread.start()
         
         
@@ -611,10 +624,6 @@ class lockwatcher(threading.Thread):
                     #send email if needed
                     #write log
                     AFroutines.emergency()
-            elif event[0] == 'stop':
-                for thread in threadDict.values():
-                    if thread.is_alive(): thread.terminate()
-                return
             elif event[0] == 'Status':
                 self.statuses[event[1]].set(event[2])
             elif event[0] == 'Log':
@@ -627,6 +636,26 @@ class lockwatcher(threading.Thread):
                     print('failed to write log')
                 self.msgAdd(event[1])
                 
+            elif event[0] == 'stop':
+                for tname,thread in threadDict.items():
+                    if thread.is_alive(): 
+                        if tname == 'logicalDeviceMonitor': print('ldevm alive, terminating')
+                        thread.terminate()
+                    else:
+                        if tname == 'logicalDeviceMonitor': print('ldevm dead, cant terminate')
+                time.sleep(1)
+                return
+            
+            elif event[0] == 'startMonitor':
+                for monitor in event[1]:
+                    print('starting monitor',monitor)
+                return
+            
+            elif event[0] == 'stopMonitor':
+                for monitor in event[1]:
+                    print('stop monitor',monitor)
+                return
+            
             elif event[0] == 'Mail':
                 command, code = event[1].split(' ')
                 self.msgAdd('Received mail %s %s'%(command,code))
@@ -654,5 +683,10 @@ class lockwatcher(threading.Thread):
 monitorThread = None
 def createMonitor(statuses,msgAddFunc):
     global monitorThread
+    
+    if monitorThread != None:
+        if monitorThread.is_alive():
+            print('cant restart running monitorthread')
+        
     monitorThread = lockwatcher(statuses,msgAddFunc)
 

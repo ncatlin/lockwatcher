@@ -25,6 +25,7 @@ class kbdListenThread(threading.Thread):
     def __init__(self,callback,eventFile):
         threading.Thread.__init__(self) 
         self.callback = callback
+        self.name='kbdListenThread'
     def run(self):
         heldKeys = []
         releasedKeys = []
@@ -59,6 +60,7 @@ class BTTestThread(threading.Thread):
         threading.Thread.__init__(self) 
         self.callback = callback
         self.deviceID = deviceID
+        self.name='btTestThreads'
     def run(self):
         error, result = winsockbtooth.connect(deviceID = self.deviceID)
         if error == False:
@@ -86,6 +88,7 @@ class BTScanThread(threading.Thread):
     def __init__(self,callback):
         threading.Thread.__init__(self) 
         self.callback = callback
+        self.name='btScanThread'
     def run(self):
         
         scanprocess = subprocess.Popen(['btscanner'], stdout=subprocess.PIPE)
@@ -105,6 +108,7 @@ class RAMMonitor(threading.Thread):
         threading.Thread.__init__(self)
         self.callback = callback
         self.die = False
+        self.name='ramMonitorThread'
     def run(self):
         lastTime = None
         startup = True
@@ -144,6 +148,7 @@ class netScanThread(threading.Thread):
     def __init__(self,callback):
         threading.Thread.__init__(self) 
         self.callback = callback
+        self.name='netScanThread'
     def run(self):
         pythoncom.CoInitialize()
         c = wmi.WMI()
@@ -160,6 +165,7 @@ class emailTestThread(threading.Thread):
         threading.Thread.__init__(self) 
         self.callback = callback
         self.config = config
+        self.name='mailTestThread'
     def run(self):
         print("in email test thread")
         if self.config['EMAIL']['EMAIL_SMTP_HOST']!= None:

@@ -53,15 +53,19 @@ class exampleDialog:
         top = self.top = Toplevel(parent)
         self.top.iconbitmap(bitmap='favicon.ico')
         
-        if category == 'ID':
-            Label(top,text='Once your cameras have been added to the iSpy surface:\n Right click on a camera, click "Edit" and look for the ID in the settings window title bar').pack()
-            parent.exImg = ImageTk.PhotoImage(Image.open('camid.png'))
-        elif category == 'chas':
-            Label(top,text='Add exe to alerts blah blah').pack()
-            parent.exImg = ImageTk.PhotoImage(Image.open('chascam.png'))
-        elif category == 'room':
-            Label(top,text='Add exe to alerts blah blah').pack()
-            parent.exImg = ImageTk.PhotoImage(Image.open('roomcam.png'))
+        try:
+            if category == 'ID':
+                Label(top,text='Once your cameras have been added to the iSpy surface:\n Right click on a camera, click "Edit" and look for the ID in the settings window title bar').pack()
+                parent.exImg = ImageTk.PhotoImage(Image.open('camid.png'))
+            elif category == 'room':
+                Label(top,text='In the iSpy interface, right click your room camera and click "Edit".\nAdd the "roomtrigger.exe" program in your lockwatcher directory to the executable field.').pack()
+                parent.exImg = ImageTk.PhotoImage(Image.open('roomcam.png'))
+            elif category == 'chas':
+                Label(top,text='In the iSpy interface, right click your chassis camera and click "Edit".\nAdd the "chastrigger.exe" program in your lockwatcher directory to the executable field.').pack()
+                parent.exImg = ImageTk.PhotoImage(Image.open('roomcam.png'))
+        except:
+            print('Failed to open the example image')
+            return
         
         exampleFrame = ttk.LabelFrame(top,text="Example",borderwidth=1,relief=GROOVE)
         exampleFrame.pack(padx=2)
@@ -82,7 +86,6 @@ class MainWindow(Frame):
     def __init__(self, master=None):
         Frame.__init__(self, master)
         self.pack()
-
         
         master.title("Lockwatcher configuration")
         master.minsize(400, 400)
@@ -149,15 +152,15 @@ class MainWindow(Frame):
             self.createShutdownPanel(self.settingFrame)
     
     threadStatus = {
-                'Bluetooth' : StringVar(),
-                'KillSwitch' : StringVar(),
-                'RAM' : StringVar(),
-                'Devices' : StringVar(),
-                'NetAdaptersIn' : StringVar(),
-                'NetAdaptersOut' : StringVar(),
-                'ChasCam' : StringVar(),
-                'RoomCam' : StringVar(),
-                'Email':StringVar()}
+                'bluetooth' : StringVar(),
+                'killSwitch' : StringVar(),
+                'ram' : StringVar(),
+                'devices' : StringVar(),
+                'netAdaptersIn' : StringVar(),
+                'netAdaptersOut' : StringVar(),
+                'chasCam' : StringVar(),
+                'roomCam' : StringVar(),
+                'email':StringVar()}
     
     def createLogsPanel(self,parent):
         logFileFrame = Frame(parent)
@@ -223,62 +226,81 @@ class MainWindow(Frame):
         
         self.threadFrames = Frame(parent)
         
+        Label(self.threadFrames,text='Right click individual monitors to start/stop them').pack(pady=5)
         Frame1 = Frame(self.threadFrames)
-        BTFrame = ttk.LabelFrame(Frame1,text="Bluetooth connection")
+        
+        BTFrame = ttk.LabelFrame(Frame1,text="Bluetooth connection",name='bluetooth')
         BTFrame.pack(side=LEFT,padx=5)
-        BTLabel = Label(BTFrame,textvariable=self.threadStatus['Bluetooth'],width=20)
+        BTFrame.bind('<Button-3>',self.rClick,add='')
+        BTLabel = Label(BTFrame,textvariable=self.threadStatus['bluetooth'],width=26,name='bluetooth')
         BTLabel.pack()
+        BTLabel.bind('<Button-3>',self.rClick,add='')
         self.sBTLabel = BTLabel
         
-        KSFrame = ttk.LabelFrame(Frame1,text="Killswitch activation")
+        KSFrame = ttk.LabelFrame(Frame1,text="Killswitch activation",name='killSwitch')
         KSFrame.pack(side=RIGHT,padx=5)
-        KSLabel = Label(KSFrame,textvariable=self.threadStatus['KillSwitch'],width=20)
+        KSFrame.bind('<Button-3>',self.rClick,add='')
+        KSLabel = Label(KSFrame,textvariable=self.threadStatus['killSwitch'],width=26,name='killSwitch')
         KSLabel.pack()
+        KSLabel.bind('<Button-3>',self.rClick,add='')
         self.sKSLabel = KSLabel
         Frame1.pack(fill=X,expand=YES)
         
         Frame2 = Frame(self.threadFrames)
-        RAMFrame = ttk.LabelFrame(Frame2,text="RAM Temperature drop")
+        RAMFrame = ttk.LabelFrame(Frame2,text="RAM Temperature drop",name='ram')
         RAMFrame.pack(side=LEFT, padx=5)
-        RAMLabel = Label(RAMFrame,textvariable=self.threadStatus['RAM'],width=20)
+        RAMFrame.bind('<Button-3>',self.rClick,add='')
+        RAMLabel = Label(RAMFrame,textvariable=self.threadStatus['ram'],width=26,name='ram')
         RAMLabel.pack()
+        RAMLabel.bind('<Button-3>',self.rClick,add='')
         self.sRAMLabel = RAMLabel
         
-        devFrame = ttk.LabelFrame(Frame2,text="Device changes")
+        devFrame = ttk.LabelFrame(Frame2,text="Device changes",name='devices')
         devFrame.pack(side=RIGHT, padx=5)
-        devLabel = Label(devFrame,textvariable=self.threadStatus['Devices'],width=20)
+        devFrame.bind('<Button-3>',self.rClick,add='')
+        devLabel = Label(devFrame,textvariable=self.threadStatus['devices'],width=26,name='devices')
         devLabel.pack()
+        devLabel.bind('<Button-3>',self.rClick,add='')
         self.sDevLabel = devLabel
         Frame2.pack(fill=X,expand=YES)
         
         Frame3 = Frame(self.threadFrames)
-        cCamFrame = ttk.LabelFrame(Frame3,text="Chassis motion")
-        cCamFrame.pack(side=RIGHT,padx=5)
-        cCamLabel = Label(cCamFrame,textvariable=self.threadStatus['ChasCam'],width=20)
+        cCamFrame = ttk.LabelFrame(Frame3,text="Chassis motion",name='chasCam')
+        cCamFrame.pack(side=LEFT,padx=5)
+        cCamFrame.bind('<Button-3>',self.rClick,add='')
+        cCamLabel = Label(cCamFrame,textvariable=self.threadStatus['chasCam'],width=26,name='chasCam')
         cCamLabel.pack()
+        cCamLabel.bind('<Button-3>',self.rClick,add='')
         self.scCamLabel = cCamLabel
         
-        rCamFrame = ttk.LabelFrame(Frame3,text="Room motion")
-        rCamFrame.pack(side=LEFT,padx=5)
-        rCamLabel = Label(rCamFrame,textvariable=self.threadStatus['RoomCam'],width=20)
+        rCamFrame = ttk.LabelFrame(Frame3,text="Room motion",name='roomCam')
+        rCamFrame.pack(side=RIGHT,padx=5)
+        rCamFrame.bind('<Button-3>',self.rClick,add='')
+        rCamLabel = Label(rCamFrame,textvariable=self.threadStatus['roomCam'],width=26,name='roomCam')
         rCamLabel.pack()
+        rCamLabel.bind('<Button-3>',self.rClick,add='')
         self.srCamLabel = rCamLabel
         Frame3.pack()
         
         Frame4 = Frame(self.threadFrames)
-        NAFrame = ttk.LabelFrame(Frame4,text="Network adapter")
+        NAFrame = ttk.LabelFrame(Frame4,text="Network adapter",name='naFrame')
         NAFrame.pack(side=LEFT,padx=5)
-        NAInLabel = Label(NAFrame,textvariable=self.threadStatus['NetAdaptersIn'],width=20)
+        NAFrame.bind('<Button-3>',self.rClick,add='')
+        NAInLabel = Label(NAFrame,textvariable=self.threadStatus['netAdaptersIn'],width=26,name='netAdaptersIn')
         NAInLabel.pack()
+        NAInLabel.bind('<Button-3>',self.rClick,add='')
         self.sNAInLabel = NAInLabel
-        NAOutLabel = Label(NAFrame,textvariable=self.threadStatus['NetAdaptersOut'],width=20)
+        NAOutLabel = Label(NAFrame,textvariable=self.threadStatus['netAdaptersOut'],width=26,name='netAdaptersOut')
         NAOutLabel.pack()
+        NAOutLabel.bind('<Button-3>',self.rClick,add='')
         self.sNAOutLabel = NAOutLabel
         
-        mailFrame = ttk.LabelFrame(Frame4,text="Email monitor")
+        mailFrame = ttk.LabelFrame(Frame4,text="Email monitor",name='email')
         mailFrame.pack(side=RIGHT,padx=5)
-        mailLabel = Label(mailFrame,textvariable=self.threadStatus['Email'],width=20)
+        mailFrame.bind('<Button-3>',self.rClick,add='')
+        mailLabel = Label(mailFrame,textvariable=self.threadStatus['email'],width=26,name='email')
         mailLabel.pack()
+        mailLabel.bind('<Button-3>',self.rClick,add='')
         self.sEmailLabel = mailLabel
         Frame4.pack()
         
@@ -286,19 +308,55 @@ class MainWindow(Frame):
             self.threadFrames.pack(pady=20)
             for triggerName,trigger in self.threadStatus.items():
                 self.statusChange(triggerName, trigger)
-            
+                
         else:
             self.messageList = []
+            defaultStr = "Not Started"
             for triggerName,triggerStr in self.threadStatus.items():
+                
+                if triggerName == 'netAdaptersIn':
+                    triggerStr.set('In: '+defaultStr)
+                elif triggerName == 'netAdaptersOut':
+                    triggerStr.set('Out: '+defaultStr)
+                else: triggerStr.set(defaultStr)
+                    
                 triggerStr.trace("w", lambda name, index, mode, triggerName=triggerName, triggerStr=triggerStr: self.statusChange(triggerName,triggerStr))
+                
+            
+    def rClick(self,frame):
+        print('clicked ',frame.widget._name)
+        commands=[
+               ('Start', lambda frame=frame: self.optMonClicked(frame,'start')),
+               ('Stop', lambda frame=frame: self.optMonClicked(frame,'stop'))
+               ]
+        cmdMenu = Menu(None,tearoff=0,takefocus=0)
+        for (name,function) in commands:
+            cmdMenu.add_command(label=name, command=function)
+        cmdMenu.tk_popup(frame.x_root+40, frame.y_root+10,entry="0")
+    
+    def optMonClicked(self,frame,action):
+        widgetName = frame.widget._name
+        
+        monitors = []
+        if widgetName == 'naFrame':
+            monitors = ['netAdaptersIn','netAdaptersOut']
+        else: monitors.append(widgetName)
+        
+        if action == 'start':
+            print('starting ',frame.widget._name)
+            devdetect.eventQueue.put(('startMonitor',monitors))
+        else:
+            devdetect.eventQueue.put(('stopMonitor',monitors))
+            print('stopping ',frame.widget._name)
+        
         
     def addMessage(self,message):
-        #cuts down on the duplicates generated by some events
-        
         
         timeMsg = time.strftime('%X')+': '+message+'\n'
         
+        #cuts down on the duplicates generated by some events
         if timeMsg in self.messageList: return
+        
         self.messageList.append(timeMsg)
         
         index = self.listbox.curselection()
@@ -325,27 +383,29 @@ class MainWindow(Frame):
             newColour = 'green'
         elif '...' in triggerText:
             newColour = 'orange'
+        elif triggerText == 'Not Started':
+            newColour = 'black'
         else:
             newColour = 'red'
         
         try:
-            if triggerName == 'Bluetooth':
+            if triggerName == 'bluetooth':
                 self.sBTLabel.config(fg=newColour)
-            elif triggerName == 'RAM':
+            elif triggerName == 'ram':
                 self.sRAMLabel.config(fg=newColour)
-            elif triggerName == 'Devices':
+            elif triggerName == 'devices':
                 self.sDevLabel.config(fg=newColour)
-            elif triggerName == 'KillSwitch':
+            elif triggerName == 'killSwitch':
                 self.sKSLabel.config(fg=newColour)
-            elif triggerName == 'NetAdaptersIn':
+            elif triggerName == 'netAdaptersIn':
                 self.sNAInLabel.config(fg=newColour)
-            elif triggerName == 'NetAdaptersOut':
+            elif triggerName == 'netAdaptersOut':
                 self.sNAOutLabel.config(fg=newColour)
-            elif triggerName == 'ChasCam':
+            elif triggerName == 'chasCam':
                 self.scCamLabel.config(fg=newColour)
-            elif triggerName == 'RoomCam':
+            elif triggerName == 'roomCam':
                 self.srCamLabel.config(fg=newColour)    
-            elif triggerName == 'Email':
+            elif triggerName == 'email':
                 self.sEmailLabel.config(fg=newColour)
             else:
                 print('Unhandled trigger update: ',triggerName)     

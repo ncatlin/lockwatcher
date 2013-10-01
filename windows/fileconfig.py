@@ -3,7 +3,7 @@
 
 Various config file handling routines
 '''
-import configparser, re, os
+import configparser, os
 
 TRIG_LOCKED = 0
 TRIG_ALWAYS = 1
