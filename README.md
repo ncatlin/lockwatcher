@@ -95,8 +95,9 @@ HWMonitor does) would be appreciated.
 
 A much better defence against RAM aquisition, but fiddly to set up and requires some hardware.
 
-You need a webcam. Any webcam: A £5 no-brand horror will be fine. Your motherboard or camera should also have an
-LED or two to give the case a bit of light inside.
+You need a webcam. A £5 no-brand horror will be fine but one without a microphone or a microphone you have 
+disabled would be a good idea for obvious reasons. The camera or inside of your case should also have an LED or two 
+to give the case a bit of light inside.
 
 Now the tricky bit: Suspend it in the computer case so it can swing freely. Use tape, string, whatever: just make sure
  the camera is free to swing a little when the case itself is moved. It also needs to be plugged in to USB, 
