@@ -7,9 +7,6 @@ and trigger the antiforensic module if the screen is locked
 @author: Nia Catlin
 '''
 import wmi 
-import ctypes
-import ctypes.wintypes as wintypes
-import pythoncom
 import threading, queue
 import time
 import AFroutines
@@ -64,7 +61,7 @@ class logicalDiskRemoveMonitor(threading.Thread):
         CoInitialize()
         self.c = wmi.WMI()
         self.watcher = self.c.Win32_LogicalDisk.watch_for("deletion") #operation might be a bit strong
-        disksOfInterest = [2,5,6] #removable,cdrom,ramdisk
+        #disksOfInterest = [2,5,6] #removable,cdrom,ramdisk
         
         self.running = True
         while self.running == True:
@@ -132,14 +129,15 @@ class deviceMonitor(threading.Thread):
     def terminate(self):
         self.running = False   
 
+'''
 lDevMonStop = False
 #This always fires after the device monitor so only really useful for more verbose logs
 #containing name/manufacturer etc of the devies that were plugged in
-'''
+
 #bug: actually this seems to wreck my operating system after a few starts and stops -
-#    consent.exe hangs, cant open services.msc due to error 0x80041003, other bad things
-#disabling it because it doesn't make lockwatcher work any better
-'''
+#    consent.exe hangs, can't open services.msc due to error 0x80041003, other bad things
+#disabling it because it doesn't actually make lockwatcher work any better
+
 class LogicalDeviceMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
@@ -178,6 +176,7 @@ class LogicalDeviceMonitor(threading.Thread):
     def terminate(self):
         global lDevMonStop
         lDevMonStop = True
+'''
 
 def setupIMAP():
     server = imapclient.IMAPClient(fileconfig.config['EMAIL']['email_imap_host'], use_uid=False, ssl=True)
@@ -327,8 +326,6 @@ class chasisMonitor(threading.Thread):
         self.running = False
 '''
         
-#share?
-#import win32wnet, win32netcon, hardwareconfig
 class BTMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
@@ -627,9 +624,7 @@ def startMonitor(threadDict,trigger):
             elif trigger == 'email':
                 threadDict['email'] = emailMonitor()    
                 threadDict['email'].start()
-
-
-import os       
+  
 class lockwatcher(threading.Thread):
     def __init__(self,statuses,msgAddFunc):
         threading.Thread.__init__(self)
@@ -735,9 +730,8 @@ class lockwatcher(threading.Thread):
                     badCommandLimit = int(fileconfig.config['EMAIL']['BAD_COMMAND_LIMIT'])
                     if badCommandLimit > 0 and badCommands >= badCommandLimit:
                         self.msgAdd('Emergency shutdown: Too many bad remote commands')
-                        reason = "Too many bad remote commands received"
                         if shutdownActivated == False:
-                            pass#AFroutines.antiforensicShutdown(reason,lockState)
+                            AFroutines.emergency()
                             
                     continue     
             else:
@@ -747,9 +741,5 @@ class lockwatcher(threading.Thread):
 monitorThread = None
 def createLockwatcher(statuses,msgAddFunc):
     global monitorThread
-    
-    if monitorThread != None:
-        if monitorThread.is_alive():
-            print('cant restart running monitorthread')
         
     monitorThread = lockwatcher(statuses,msgAddFunc)
