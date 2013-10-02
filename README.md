@@ -1,7 +1,7 @@
 lockwatcher
 ===========
 
-Anti-forensic monitor program: watches for signs of tampering or forensic acquisition, purges encryption keys and shuts 
+Anti live-forensics monitor program: watches for signs of tampering or forensic acquisition, purges encryption keys and shuts 
 everything down.
 
 It was thought up when writing a proof of concept for defeating live forensic analysis as part of a masters thesis
