@@ -1,7 +1,7 @@
 lockwatcher
 ===========
 
-Anti-forensic monitor program: watches for signs of tampering or forensic aquisition, purges encryption keys and shuts 
+Anti-forensic monitor program: watches for signs of tampering or forensic acquisition, purges encryption keys and shuts 
 everything down.
 
 It was thought up when writing a proof of concept for defeating live forensic analysis as part of a masters thesis
@@ -15,7 +15,7 @@ the screen is locked) but even if they ignore a CD being inserted into the drive
  
  This is bad. 
  
- Lockwatcher is built around the assumption that if someone tries to use your computer while it is locked
+ lockwatcher is built around the assumption that if someone tries to use your computer while it is locked
  then they are trying to get your live data, so it needs to be destroyed.
  
 *How lockwatcher works*
@@ -24,7 +24,7 @@ the screen is locked) but even if they ignore a CD being inserted into the drive
 
 * Interaction* with the computer while locked triggers an emergency shutdown.
 
-* Encryption keys are purged from memory and the computer shuts down to help prevent live data from being aquired.
+* Encryption keys are purged from memory and the computer shuts down to help prevent live data from being acquired.
 
 
 Caveats:
@@ -36,9 +36,9 @@ There is a Windows version but even forced shutdown is SLOW and obvious, and the
 from ramdisk (live-USB,etc) means you are likely to have lots of interesting things on disk even if they can't 
 get your RAM out in time.
  
-It is specifically designed for defeating live memory aquisition.
+It is specifically designed for defeating live memory acquisition.
 
-It does not protect against disk analysis. That is what encryption is for, but Lockwatcher will help keep your
+It does not protect against disk analysis. That is what encryption is for, but lockwatcher will help keep your
 keys safe.
 
 It does not stop malicious software from stealing your data. Good information security practice will help, running 
@@ -71,29 +71,29 @@ One or more keyboard keys can be set to trigger an emergency shutdown if you are
 * Network interface monitoring
 
 If the standard procedure of isolating the computer from the network is followed, or an attacker connects/disconnects
-a network interface to access traffic then Lockwatcher will notice this and trigger a shutdown.
+a network interface to access traffic then lockwatcher will notice this and trigger a shutdown.
 
 * Bluetooth monitoring
 
-Lockwatcher can connect to a Bluetooth device and trigger a shutdown if this connection is severed. This is useful 
+lockwatcher can connect to a Bluetooth device and trigger a shutdown if this connection is severed. This is useful 
 if your devices are removed, turned off or placed in a shielded container by an attacker. If you have a device which
  can be quickly turned off or parted from its batteries then this becomes a handy portable kill-switch when you are 
  not at the computer.
  
 * RAM temperature detection
 
-The first defence against RAM aquisition by freezing/removing memory modules 
+The first defence against RAM acquisition by freezing/removing memory modules 
 (see: https://citp.princeton.edu/research/memory/), Lockwatcher can monitor the temperature of certain memory 
 modules and trigger if their temperature falls below a certain point.
 
-The availability of memory modules with temperature sensors is bad so at the moment Lockwatcher only
+The availability of memory modules with temperature sensors is bad so at the moment lockwatcher only
 supports monitoring Crucial Ballistix modules, and only on Windows (requires installing the Ballistix MOD utility).
 Anyone who would like to contribute code to read temperature directly and from other types of RAM (like 
 HWMonitor does) would be appreciated.
 
 * Chassis movement detection
 
-A much better defence against RAM aquisition, but fiddly to set up and requires some hardware.
+A much better defence against RAM acquisition, but fiddly to set up and requires some hardware.
 
 You need a webcam. A £5 no-brand horror will be fine but one without a microphone or a microphone you have 
 disabled would be a good idea for obvious reasons. The camera or inside of your case should also have an LED or two 
@@ -203,7 +203,7 @@ Q.Curse you authoritarian pigdog fascist, I want to use your stuff but it is rid
 A. You can go through the source code if you want, most of it is written in Python 3 so it isn't even 
 compiled on Linux. The lack of Windows access to Bluetooth sockets (with Python 3, try it if you don't believe me) 
 and user defined Signals means a bit of C code is in the Win32 distribution as little executables, 
-which is what Avast flags as suspicous occasionally. They are easy to compile with cygwin.
+which is what Avast flags as suspicious occasionally. They are easy to compile with cygwin.
 
 Q.When is the Mac version coming out?
 
@@ -221,9 +221,9 @@ Also: other types of RAM on both operating systems.
 
 * I'm not happy with the Windows shutdown speed at all, it might be worth implementing RAM erasing instead.
 I can't get firewire attacks to work on Window 7 so whether the shutdown process interrupts 
-RAM aquisition in time or not is a mystery.
+RAM acquisition in time or not is a mystery.
 
 * If anyone could write something like this for Android/iOS/etc then please do. The exposure of mobile devices to 
-seizure and aquisition at borders or on arrest, plus their critical reliance on a tiny stable of aquisition tools
+seizure and acquisition at borders or on arrest, plus their critical reliance on a tiny stable of acquisition tools
  makes them the most deserving hosts of this kind of tool. Storage wiping would even be handy, but I don't know 
 if it can be done without jailbreaking at the very least.
