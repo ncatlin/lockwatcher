@@ -1,90 +1,289 @@
-<!DOCTYPE html>
+<!doctype html>
+<!-- The Time Machine GitHub pages theme was designed and developed by Jon Rohan, on Feb 7, 2012. -->
+<!-- Follow him for fun. http://twitter.com/jonrohan. Tail his code on http://github.com/jonrohan -->
 <html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
 
-  <head>
-    <meta charset='utf-8' />
-    <meta http-equiv="X-UA-Compatible" content="chrome=1" />
-    <meta name="description" content="Lockwatcher : Anti-forensic monitor program: watches for signs of forensic aquisition and purges keys/shuts everything down." />
+  <link rel="stylesheet" href="stylesheets/stylesheet.css" media="screen"/>
+  <link rel="stylesheet" href="stylesheets/pygment_trac.css"/>
+  <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js"></script>
+  <script type="text/javascript" src="javascripts/script.js"></script>
 
-    <link rel="stylesheet" type="text/css" media="screen" href="stylesheets/stylesheet.css">
+  <title>Lockwatcher</title>
+  <meta name="description" content="Anti-forensic monitor program: watches for signs of forensic aquisition and purges keys/shuts everything down.">
 
-    <title>Lockwatcher</title>
-  </head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
 
-  <body>
+</head>
 
-    <!-- HEADER -->
-    <div id="header_wrap" class="outer">
-        <header class="inner">
-          <a id="forkme_banner" href="https://github.com/ncatlin/lockwatcher">View on GitHub</a>
+<body>
 
-          <h1 id="project_title">Lockwatcher</h1>
-          <h2 id="project_tagline">Anti-forensic monitor program: watches for signs of forensic aquisition and purges keys/shuts everything down.</h2>
-
-            <section id="downloads">
-              <a class="zip_download_link" href="https://github.com/ncatlin/lockwatcher/zipball/master">Download this project as a .zip file</a>
-              <a class="tar_download_link" href="https://github.com/ncatlin/lockwatcher/tarball/master">Download this project as a tar.gz file</a>
-            </section>
-        </header>
-    </div>
-
-    <!-- MAIN CONTENT -->
-    <div id="main_content_wrap" class="outer">
-      <section id="main_content" class="inner">
-        <h1>
+  <div class="wrapper">
+    <header>
+      <h1 class="title">Lockwatcher</h1>
+    </header>
+    <div id="container">
+      <p class="tagline">Anti-forensic monitor program: watches for signs of forensic aquisition and purges keys/shuts everything down.</p>
+      <div id="main" role="main">
+        <div class="download-bar">
+        <div class="inner">
+          <a href="https://github.com/ncatlin/lockwatcher/tarball/master" class="download-button tar"><span>Download</span></a>
+          <a href="https://github.com/ncatlin/lockwatcher/zipball/master" class="download-button zip"><span>Download</span></a>
+          <a href="https://github.com/ncatlin/lockwatcher" class="code">View Lockwatcher on GitHub</a>
+        </div>
+        <span class="blc"></span><span class="trc"></span>
+        </div>
+        <article class="markdown-body">
+          <h1>
 <a name="lockwatcher" class="anchor" href="#lockwatcher"><span class="octicon octicon-link"></span></a>lockwatcher</h1>
 
-<p>Anti-forensic monitor program: watches for signs of forensic aquisition and purges keys/shuts everything down.
-Pretty much everything is written in Python 3</p>
+<p>Anti live-forensics monitor program: watches for signs of tampering or forensic acquisition, purges encryption keys and shuts 
+everything down.</p>
 
-<p>This program is the result of my masters thesis on anti-forensics and was written as part of a case-study on
-building a forensic aquisition/analysis resistant sytem.</p>
-
-<p>TL;DR</p>
-
-<p>You lock computer whenever not physically present at it.</p>
-
-<p>Someone attempts to do something to computer (or walks in room - there are lots of trigger options).</p>
-
-<p>Encryption keys are purged, computer shuts down, your data is safe. Probably.</p>
+<p>It was thought up when writing a proof of concept for defeating live forensic analysis as part of a masters thesis
+ that evaluated anti-forensic techniques.</p>
 
 <h1>
-<a name="install" class="anchor" href="#install"><span class="octicon octicon-link"></span></a>Install</h1>
+<a name="why" class="anchor" href="#why"><span class="octicon octicon-link"></span></a>Why?</h1>
 
-<p>sudo apt-get install motion ifplugd lm-sensors</p>
+<p>Operating systems have improved physical security over recent years (eg: by not allowing auto-run when 
+the screen is locked) but even if they ignore a CD being inserted into the drive while the computer is locked, they
+ are still sitting there happily allowing someone to keep trying to get your data. </p>
 
-<p>Install Imapclient (<a href="https://pypi.python.org/pypi/IMAPClient/0.10.2">https://pypi.python.org/pypi/IMAPClient/0.10.2</a>) by whatever method is convenient </p>
+<p>This is bad. </p>
 
-<p>[download/unzip lockwatcher]</p>
+<p>lockwatcher is built around the assumption that if someone tries to use your computer while it is locked
+ then they are trying to get your live data, so it needs to be destroyed.</p>
 
-<p>sudo setupfiles/setup.sh</p>
+<p><em>How lockwatcher works</em></p>
+
+<ul>
+<li><p>You lock computer whenever not physically present at it.</p></li>
+<li><p>"Interaction" with the computer while locked triggers an emergency shutdown.</p></li>
+<li><p>Encryption keys are purged from memory and the computer shuts down to help prevent live data from being acquired.</p></li>
+</ul><h1>
+<a name="caveats" class="anchor" href="#caveats"><span class="octicon octicon-link"></span></a>Caveats:</h1>
+
+<p>The software was designed for running on live-CD/live-USB Linux, where dismounting (deniably) encrypted storage and 
+powering down is accomplished in 3-5 seconds or less, with little warning given to the attacker. </p>
+
+<p>There is a Windows version but even forced shutdown is SLOW and obvious, and the difficulty in running it 
+from ramdisk (live-USB,etc) means you are likely to have lots of interesting things on disk even if they can't 
+get your RAM out in time.</p>
+
+<p>It is specifically designed for defeating live memory acquisition.</p>
+
+<p>It does not protect against disk analysis. That is what encryption is for, but lockwatcher will help keep your
+keys safe.</p>
+
+<p>It does not stop malicious software from stealing your data. Good information security practice will help, running 
+a live distribution from read-only media will help and doing your sensitive stuff on a computer that does not 
+talk to the internet will help but this is a big problem.</p>
+
+<p>It offers very little protection from surveillance. Although it can be configured to save (or email) a photo of
+an intruder in the room, this isn't an insurmountable obstacle to someone who wants to use cameras, microphones, 
+RF monitoring equipment and so on.</p>
+
+<p>It does not protect you from having someone beat you with a wrench (or threaten prison time) to get your 
+encryption keys. Deniable encryption might help, but using it effectively requires a lot of diligence.</p>
+
+<p>There can be false positives. A device failing or a cat walking around the room can scare the system into 
+shutting down. By default a shutdown isn't very destructive, so this should only be a nuisance if it happens.</p>
 
 <h1>
-<a name="configuration" class="anchor" href="#configuration"><span class="octicon octicon-link"></span></a>Configuration</h1>
+<a name="what-kind-of-interaction-are-we-talking-about" class="anchor" href="#what-kind-of-interaction-are-we-talking-about"><span class="octicon octicon-link"></span></a>*What kind of 'Interaction' are we talking about?</h1>
 
-<p>sudo src/lockwatcher-gui/lockwatcher-gui.py</p>
+<p>There are lots of triggers for an emergency shutdown which can be tailored for the environment 
+the computer is running in.</p>
+
+<ul>
+<li>Device monitoring</li>
+</ul><p>Any devices or disks being plugged into the system or removed. USB, Firewire, CDs, etc.</p>
+
+<ul>
+<li>Keyboard kill-switch</li>
+</ul><p>One or more keyboard keys can be set to trigger an emergency shutdown if you are at the computer when it is required.</p>
+
+<ul>
+<li>Network interface monitoring</li>
+</ul><p>If the standard procedure of isolating the computer from the network is followed, or an attacker connects/disconnects
+a network interface to access traffic then lockwatcher will notice this and trigger a shutdown.</p>
+
+<ul>
+<li>Bluetooth monitoring</li>
+</ul><p>lockwatcher can connect to a Bluetooth device and trigger a shutdown if this connection is severed. This is useful 
+if your devices are removed, turned off or placed in a shielded container by an attacker. If you have a device which
+ can be quickly turned off or parted from its batteries then this becomes a handy portable kill-switch when you are 
+ not at the computer.</p>
+
+<ul>
+<li>RAM temperature detection</li>
+</ul><p>The first defence against RAM acquisition by freezing/removing memory modules 
+(see: <a href="https://citp.princeton.edu/research/memory/">https://citp.princeton.edu/research/memory/</a>), Lockwatcher can monitor the temperature of certain memory 
+modules and trigger if their temperature falls below a certain point.</p>
+
+<p>The availability of memory modules with temperature sensors is bad so at the moment lockwatcher only
+supports monitoring Crucial Ballistix modules, and only on Windows (requires installing the Ballistix MOD utility).
+Anyone who would like to contribute code to read temperature directly and from other types of RAM (like 
+HWMonitor does) would be appreciated.</p>
+
+<ul>
+<li>Chassis movement detection</li>
+</ul><p>A much better defence against RAM acquisition, but fiddly to set up and requires some hardware.</p>
+
+<p>You need a webcam. A £5 no-brand horror will be fine but one without a microphone or a microphone you have 
+disabled would be a good idea for obvious reasons. The camera or inside of your case should also have an LED or two 
+to give the case a bit of light inside.</p>
+
+<p>Now the tricky bit: Suspend it in the computer case so it can swing freely. Use tape, string, whatever: just make sure
+ the camera is free to swing a little when the case itself is moved. It also needs to be plugged in to USB, 
+ preferably to an internal USB port.</p>
+
+<p><img src="casepicture1.jpg" alt="It is easier if your case is not cable-managment hell"></p>
+
+<p>If the case is securely shut (preferably with a lock) then any movement of the case or attempts to open it up will
+ either move the camera or change the lighting conditions in the chassis, triggering a shutdown long before the
+ RAM or BIOS can be tampered with. This also helps prevent hot-plug attacks against self-encrypting hard drives.</p>
+
+<p>This trigger (and the one below) requires some free motion detection software: motion on Linux, iSpy on Windows. </p>
+
+<ul>
+<li>Room movement detection</li>
+</ul><p>A camera can be pointed at the room to shut down when any motion is detected. Not too useful if pets/family/coworkers
+ are expected to be in the same room as the computer while you are away.</p>
+
+<p>This trigger can be activated and deactivated remotely so the system doesn't shutdown 
+whenever you return to the computer. </p>
+
+<p>This also allows a photo to be saved or emailed to alert you to the identity of the attacker.</p>
+
+<ul>
+<li>Not yet implemented - Intrusion switch monitoring</li>
+</ul><p>Trigger a shutdown if the case is opened and the motherboard intrusion detection switch is activated. </p>
+
+<ul>
+<li>Not yet implemented - Power supply monitoring</li>
+</ul><p>The room motion trigger could in theory be circumvented by cutting power to the room and then taking the memory
+ modules. If the case is reasonably secure then there is minimal chance of this being successful, but a transition 
+ from mains power to uninterruptable power supply could be used as a trigger. And cause false positives in a 
+ power outage.</p>
 
 <h1>
-<a name="run" class="anchor" href="#run"><span class="octicon octicon-link"></span></a>Run</h1>
+<a name="bonus-points" class="anchor" href="#bonus-points"><span class="octicon octicon-link"></span></a>Bonus points</h1>
+
+<p>Anything that increases the time between trigger activation and having your memory ripped out is helpful. Keep your system chassis secure, and tucked away so that doing anything with it requires moving it around and setting off the chassis motion monitor.</p>
+
+<p>Password protect your BIOS to stop someone rebooting straight into a memory analysis CD. </p>
+
+<p>If your BIOS can be configured to perform a complete memory check on start up, (or even better to wipe memory) then activate those options. Yes it will require a password every time your system boots up and slow the process down, but some level of inconvenience has to be accepted.</p>
+
+<p>Not important, but If your cables allow it you can swap the reset and power switch pins on the motherboard. An attempt to use the reset button to do a hard reset will trigger a standard shutdown instead, which causes Truecrypt to dismount its volumes. </p>
+
+<h1>
+<a name="linux-installation" class="anchor" href="#linux-installation"><span class="octicon octicon-link"></span></a>Linux Installation</h1>
+
+<p>These packages are required</p>
+
+<ul>
+<li><p>sudo apt-get install motion ifplugd lm-sensors </p></li>
+<li><p>Install Imapclient (<a href="https://pypi.python.org/pypi/IMAPClient/0.10.2">https://pypi.python.org/pypi/IMAPClient/0.10.2</a>) by whatever method is convenient </p></li>
+<li><p>[download/unzip lockwatcher]</p></li>
+</ul><p>Initial configuration:</p>
+
+<ul>
+<li>sudo setupfiles/setup.sh</li>
+</ul><p>To configure further via GUI:</p>
+
+<ul>
+<li>sudo src/lockwatcher-gui/lockwatcher-gui.py</li>
+</ul><p><img src="guipicture.png" alt="Configure further via the GUI"></p>
 
 <p>sudo src/lockwatcher.py start</p>
 
 <h1>
-<a name="notes" class="anchor" href="#notes"><span class="octicon octicon-link"></span></a>Notes</h1>
+<a name="windows-installation" class="anchor" href="#windows-installation"><span class="octicon octicon-link"></span></a>Windows Installation</h1>
 
-<p>I just uploaded this and it has only been tested on lubuntu, so good luck installing it.</p>
-      </section>
+<p>*The free, open-source iSpy software is required for room and chassis motion detection</p>
+
+<p>Get it here: <a href="http://www.ispyconnect.com/download.aspx">http://www.ispyconnect.com/download.aspx</a>
+Install it, configure your cameras (covered later).</p>
+
+<ul>
+<li>Install lockwatcher from the msi, or just extract the .zip somewhere</li>
+<li>Run lockwatcher.exe, play with the settings</li>
+<li>Click 'Start lockwatcher' on the status panel</li>
+</ul><h1>
+<a name="using-remote-control" class="anchor" href="#using-remote-control"><span class="octicon octicon-link"></span></a>Using remote control</h1>
+
+<p>(I know this is a pain in the neck, hopefully a native app will be up and running for iOS and Android at some point)
+You need an email account with smtp and imap access, preferably a throwaway account that you don't use for anything else.</p>
+
+<ul>
+<li><p>Install QPython on your Android device</p></li>
+<li><p>Go to <a href="http://qpython.com/create.php">http://qpython.com/create.php</a>, paste in the mobilecontrol.py code</p></li>
+<li><p>Edit emails,password to your liking and add the authentication secret from the Lockwatcher email settings tab</p></li>
+<li><p>Generate the QRCode on the web page, scan it with QPython on your phone</p></li>
+<li><p>Save it as a script</p></li>
+<li><p>Whenever you want to use it, open QPython and execute the script</p></li>
+</ul><p><img src="mcpicture.png" alt="The mobile control interface"></p>
+
+<h1>
+<a name="qa" class="anchor" href="#qa"><span class="octicon octicon-link"></span></a>Q&amp;A</h1>
+
+<p>Q.Can lockwatcher wipe files instead of just shutting down? </p>
+
+<p>A.You can add relevant commands to the custom batch script which will be executed on emergency shutdown, but it takes a long time and makes false positive triggers a much bigger problem.</p>
+
+<p>Q.Curse you authoritarian pigdog fascist, I want to use your stuff but it is riddled with government backdoors!</p>
+
+<p>A. You can go through the source code if you want, most of it is written in Python 3 so it isn't even 
+compiled on Linux. The lack of Windows access to Bluetooth sockets (with Python 3, try it if you don't believe me) 
+and user defined Signals means a bit of C code is in the Win32 distribution as little executables, 
+which is what Avast flags as suspicious occasionally. They are easy to compile with cygwin.</p>
+
+<p>Q.When is the Mac version coming out?</p>
+
+<p>A.Either when someone else writes one or when someone buys me a Mac to develop/test it on.</p>
+
+<h1>
+<a name="to-do-list" class="anchor" href="#to-do-list"><span class="octicon octicon-link"></span></a>To-do list</h1>
+
+<ul>
+<li><p>Write iOS/Android apps instead of doing the qpython thing</p></li>
+<li><p>RAM temperature monitoring on Linux. My motherboard won't play nice with decode-dimms and 
+I haven't had much luck doing what the ballistix MOD utility does. 
+Also: other types of RAM on both operating systems.</p></li>
+<li><p>Testing and better install configurations for other linux distros</p></li>
+<li><p>I'm not happy with the Windows shutdown speed at all, it might be worth implementing RAM erasing instead.
+I can't get firewire attacks to work on Window 7 so whether the shutdown process interrupts 
+RAM acquisition in time or not is a mystery.</p></li>
+<li><p>If anyone could write something like this for Android/iOS/etc then please do. The exposure of mobile devices to 
+seizure and acquisition at borders or on arrest, plus their critical reliance on a tiny stable of acquisition tools
+makes them the most deserving hosts of this kind of tool. Storage wiping would even be handy, but I don't know 
+if it can be done without jailbreaking at the very least.</p></li>
+</ul>
+        </article>
+      </div>
     </div>
+    <footer>
+      <div class="owner">
+      <p><a href="https://github.com/ncatlin" class="avatar"><img src="https://2.gravatar.com/avatar/985cb69a001920892c8cddc62e49b720?d=https%3A%2F%2Fidenticons.github.com%2Fe57c68bdd82b9a2fb51252a56c227445.png&amp;s=30" width="48" height="48"/></a> <a href="https://github.com/ncatlin">ncatlin</a> maintains <a href="https://github.com/ncatlin/lockwatcher">Lockwatcher</a></p>
 
-    <!-- FOOTER  -->
-    <div id="footer_wrap" class="outer">
-      <footer class="inner">
-        <p class="copyright">Lockwatcher maintained by <a href="https://github.com/ncatlin">ncatlin</a></p>
-        <p>Published with <a href="http://pages.github.com">GitHub Pages</a></p>
-      </footer>
-    </div>
 
-    
+      </div>
+      <div class="creds">
+        <small>This page generated using <a href="https://pages.github.com/">GitHub Pages</a><br/>theme by <a href="https://twitter.com/jonrohan/">Jon Rohan</a></small>
+      </div>
+    </footer>
+  </div>
+  <div class="current-section">
+    <a href="#top">Scroll to top</a>
+    <a href="https://github.com/ncatlin/lockwatcher/tarball/master" class="tar">tar</a><a href="https://github.com/ncatlin/lockwatcher/zipball/master" class="zip">zip</a><a href="" class="code">source code</a>
+    <p class="name"></p>
+  </div>
 
-  </body>
+  
+</body>
 </html>
