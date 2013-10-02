@@ -44,6 +44,7 @@ optionCategories = {OPT_STATUS:'Status',
                     OPT_SHUT:'Shutdown Actions'}
 
 
+
 root = Tk()
 root.wm_iconbitmap('favicon.ico')
 class exampleDialog:
@@ -94,6 +95,8 @@ class MainWindow(Frame):
         
     def create_widgets(self,parent):
         self.windowFrame = parent
+        self.justStarted = True
+        self.messageList = []
         
         #setup options list
         optionsFrame = Frame(parent)
@@ -212,23 +215,12 @@ class MainWindow(Frame):
         Label(parent,textvariable=self.sStatusText).pack(pady=5)
         Button(parent,textvariable=self.sButtonText,command=self.lwActivate).pack(pady=5)
         
-        if devdetect.monitorThread != None:
-            threadAlive = devdetect.monitorThread.is_alive()
-        else: threadAlive = False
-        
-        if threadAlive == False:
-            self.sStatusText.set("Lockwatcher is not running")
-            self.sButtonText.set("Start lockwatcher")
-        else:
-            self.sStatusText.set("Lockwatcher is running")
-            self.sButtonText.set("Stop lockwatcher")
-        
         self.threadFrames = Frame(parent)
         
         Label(self.threadFrames,text='Right click individual monitors to start/stop them').pack(pady=5)
         Frame1 = Frame(self.threadFrames)
         
-        BTFrame = ttk.LabelFrame(Frame1,text="Bluetooth connection",name='bluetooth')
+        BTFrame = ttk.LabelFrame(Frame1,text="Bluetooth Connection",name='bluetooth')
         BTFrame.pack(side=LEFT,padx=5)
         BTFrame.bind('<Button-3>',self.rClick,add='')
         BTLabel = Label(BTFrame,textvariable=self.threadStatus['bluetooth'],width=26,name='bluetooth')
@@ -236,7 +228,7 @@ class MainWindow(Frame):
         BTLabel.bind('<Button-3>',self.rClick,add='')
         self.sBTLabel = BTLabel
         
-        KSFrame = ttk.LabelFrame(Frame1,text="Killswitch activation",name='killSwitch')
+        KSFrame = ttk.LabelFrame(Frame1,text="Killswitch Activation",name='killSwitch')
         KSFrame.pack(side=RIGHT,padx=5)
         KSFrame.bind('<Button-3>',self.rClick,add='')
         KSLabel = Label(KSFrame,textvariable=self.threadStatus['killSwitch'],width=26,name='killSwitch')
@@ -246,7 +238,7 @@ class MainWindow(Frame):
         Frame1.pack(fill=X,expand=YES)
         
         Frame2 = Frame(self.threadFrames)
-        RAMFrame = ttk.LabelFrame(Frame2,text="RAM Temperature drop",name='ram')
+        RAMFrame = ttk.LabelFrame(Frame2,text="RAM Temperature Drop",name='ram')
         RAMFrame.pack(side=LEFT, padx=5)
         RAMFrame.bind('<Button-3>',self.rClick,add='')
         RAMLabel = Label(RAMFrame,textvariable=self.threadStatus['ram'],width=26,name='ram')
@@ -254,7 +246,7 @@ class MainWindow(Frame):
         RAMLabel.bind('<Button-3>',self.rClick,add='')
         self.sRAMLabel = RAMLabel
         
-        devFrame = ttk.LabelFrame(Frame2,text="Device changes",name='devices')
+        devFrame = ttk.LabelFrame(Frame2,text="Device Changes",name='devices')
         devFrame.pack(side=RIGHT, padx=5)
         devFrame.bind('<Button-3>',self.rClick,add='')
         devLabel = Label(devFrame,textvariable=self.threadStatus['devices'],width=26,name='devices')
@@ -264,7 +256,7 @@ class MainWindow(Frame):
         Frame2.pack(fill=X,expand=YES)
         
         Frame3 = Frame(self.threadFrames)
-        cCamFrame = ttk.LabelFrame(Frame3,text="Camera monitors",name='cameras')
+        cCamFrame = ttk.LabelFrame(Frame3,text="Camera Movement",name='cameras')
         cCamFrame.pack(side=LEFT,padx=5)
         cCamFrame.bind('<Button-3>',self.rClick,add='')
         cCamLabel = Label(cCamFrame,textvariable=self.threadStatus['cameras'],width=26,name='cameras')
@@ -273,7 +265,7 @@ class MainWindow(Frame):
         self.scCamLabel = cCamLabel
         
         Frame4 = Frame(self.threadFrames)
-        NAFrame = ttk.LabelFrame(Frame4,text="Network adapter",name='naFrame')
+        NAFrame = ttk.LabelFrame(Frame4,text="Network Adapters",name='naFrame')
         NAFrame.pack(side=LEFT,padx=5)
         NAFrame.bind('<Button-3>',self.rClick,add='')
         NAInLabel = Label(NAFrame,textvariable=self.threadStatus['netAdaptersIn'],width=26,name='netAdaptersIn')
@@ -285,7 +277,7 @@ class MainWindow(Frame):
         NAOutLabel.bind('<Button-3>',self.rClick,add='')
         self.sNAOutLabel = NAOutLabel
         
-        mailFrame = ttk.LabelFrame(Frame4,text="Email monitor",name='email')
+        mailFrame = ttk.LabelFrame(Frame4,text="Email Commands",name='email')
         mailFrame.pack(side=RIGHT,padx=5)
         mailFrame.bind('<Button-3>',self.rClick,add='')
         mailLabel = Label(mailFrame,textvariable=self.threadStatus['email'],width=26,name='email')
@@ -294,25 +286,94 @@ class MainWindow(Frame):
         self.sEmailLabel = mailLabel
         Frame4.pack()
         
+
+        
+        startupRun = 'False'
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Run",0,winreg.KEY_READ)
+            [path,dtype] =  winreg.QueryValueEx(key, 'lockwatcher')
+            
+            if path == __file__:
+                startupRun = 'True'    
+        except WindowsError:
+            pass
+        
+
+        self.loadOnStartCheck = StringVar()
+        self.loadOnStartCheck.set(startupRun)
+        checkLoadOnStart = Checkbutton(parent,text="Load lockwatcher when Windows starts",variable=self.loadOnStartCheck,
+                                    onval='True',offval='False',command=(lambda: self.setLoadOnStart(self.loadOnStartCheck.get())))
+        checkLoadOnStart.pack()
+        
+        self.immediateMonitor = StringVar()
+        self.immediateMonitor.set(config['TRIGGERS']['immediatestart'])
+        checkImmediateRun = Checkbutton(parent,text="Activate monitoring when lockwatcher starts",variable=self.immediateMonitor,
+                                    onval='True',offval='False',command=(lambda: self.changeCheckBox('TRIGGERS:immediatestart',self.immediateMonitor)))
+        checkImmediateRun.pack()
+        
+        #run on startup if needed
+        if self.justStarted == True:
+            self.justStarted = False
+            if config['TRIGGERS']['immediatestart'] == 'True':
+                devdetect.createLockwatcher(self.threadStatus,self.addMessage)
+                devdetect.monitorThread.start() 
+                self.setupMonitorStrings()
+                
+
+        if devdetect.monitorThread != None:
+            threadAlive = devdetect.monitorThread.is_alive()
+        else: threadAlive = False
+        
         if threadAlive == True:
+            self.sStatusText.set("Lockwatcher is monitoring your system")
+            self.sButtonText.set("Stop lockwatcher")
+            
+            #give the statuses their appropriate colour
             self.threadFrames.pack(pady=20)
             for triggerName,trigger in self.threadStatus.items():
                 self.statusChange(triggerName, trigger)
-                
         else:
-            self.messageList = []
-            defaultStr = "Not Started"
-            for triggerName,triggerStr in self.threadStatus.items():
-                
-                if triggerName == 'netAdaptersIn':
-                    triggerStr.set('In: '+defaultStr)
-                elif triggerName == 'netAdaptersOut':
-                    triggerStr.set('Out: '+defaultStr)
-                else: triggerStr.set(defaultStr)
-                    
-                triggerStr.trace("w", lambda name, index, mode, triggerName=triggerName, triggerStr=triggerStr: self.statusChange(triggerName,triggerStr))
-                
+            self.sStatusText.set("Lockwatcher is not monitoring your system")
+            self.sButtonText.set("Start lockwatcher")
+            self.setupMonitorStrings()
+        
             
+    
+    def setupMonitorStrings(self):
+        defaultStr = "Not Started"
+        for triggerName,triggerStr in self.threadStatus.items():
+        
+            if triggerName == 'netAdaptersIn':
+                triggerStr.set('In: '+defaultStr)
+            elif triggerName == 'netAdaptersOut':
+                triggerStr.set('Out: '+defaultStr)
+            else: triggerStr.set(defaultStr)
+            
+            triggerStr.trace("w", lambda name, index, mode, triggerName=triggerName, triggerStr=triggerStr: self.statusChange(triggerName,triggerStr))
+        
+    def setLoadOnStart(self,currentState):
+        rights = winreg.KEY_WRITE
+        if currentState == 'True':
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Run",0,rights)
+            try:
+                [path,dtype] =  winreg.QueryValueEx(key, 'lockwatcher')
+                
+                if path == __file__:
+                    print('already working, what?')
+                else:
+                    winreg.SetValueEx(key, 'lockwatcher',0,winreg.REG_SZ,  __file__)  
+                    print('setvalue1')
+            except WindowsError:
+                winreg.SetValueEx(key, 'lockwatcher',0,winreg.REG_SZ, __file__) 
+                print('setvalue2')
+        else:
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Run",0,rights)
+                winreg.DeleteValue(key, 'lockwatcher')   
+            except WindowsError as e:
+                print('didnt exist? or permission i dunno: ',e)
+        
+           
     def rClick(self,frame):
         print('clicked ',frame.widget._name)
         commands=[
@@ -492,6 +553,8 @@ class MainWindow(Frame):
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
         
+        
+        
     def BTDevSelected(self,listbox):
         
         for item in self.BTDevList.curselection():
@@ -515,13 +578,22 @@ class MainWindow(Frame):
         self.BTDevList.delete(0,self.BTDevList.size()-1)
         
         self.scanBtnText.set('Scan for devices')
+        
+        if '[Error' in str(out):
+            self.BTDevList.insert(0,'Failed to launch btscanner.exe: %s'%out)
+            return
+        
         if out[0] == 0x94: #error flag that cant be used in bluetooth names. usually.
             errcode = str(out[1:],'UTF-8')
-            if errcode != '259':
-                self.BTDevList.insert(0,'Bluetooth scan failed: error %s'%errcode) #todo: make this code nice
-                return
-            else:
+            if errcode == '259': #no results found
                 out = out[1:]
+            else:
+                if errcode == '6': #invalid handle
+                    self.BTDevList.insert(0,'Scan failed: Bluetooth not enabled.')
+                else:
+                    self.BTDevList.insert(0,'Bluetooth scan failed: error %s'%errcode) #todo: make this code nice
+                return
+                
             
         results = str(out,'UTF-8').split('\n')
         
@@ -577,6 +649,10 @@ class MainWindow(Frame):
         
         RAMFrame =  ttk.LabelFrame(parent,text="RAM Low Temperature Detection",borderwidth=1,relief=GROOVE)
         RAMFrame.pack()
+        
+        if not os.path.exists(config['TRIGGERS']['BALLISTIX_LOG_FILE']):
+            Label(RAMFrame,text="'Crucial Ballistix' RAM modules must be used in conjunction\nwith the MOD utility to monitor memory temperature",background='red').pack()
+        
         
         FileFrame = Frame(RAMFrame)
         FileFrame.pack()

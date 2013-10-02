@@ -113,6 +113,7 @@ if not os.path.exists(CONFIG_FILE):
     trig['ispy_path']=''
     trig['room_cam_id']=''
     trig['logfile']=''
+    trig['immediatestart']='False'
     
     config.add_section('EMAIL')
     email = config['EMAIL']

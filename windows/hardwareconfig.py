@@ -91,10 +91,15 @@ class BTScanThread(threading.Thread):
         self.name='btScanThread'
     def run(self):
         
-        scanprocess = subprocess.Popen(['btscanner'], stdout=subprocess.PIPE)
+        try:
+            scanprocess = subprocess.Popen(['btscanner'], stdout=subprocess.PIPE)
+        except WindowsError as e:
+            self.callback(e)
+            return None
+        
         print("scanprocess = ",scanprocess)
         if scanprocess == []:
-            print("Bluetooth does not appear to be enabled: skipping")
+            self.callback("[Error] Bluetooth does not appear to be enabled: skipping")
             return None
 
         out, err = scanprocess.communicate()
