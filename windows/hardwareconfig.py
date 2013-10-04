@@ -215,18 +215,59 @@ def checkLock():
     else:
         return False   
 
-import win32con, win32api, time
-#passes keystrokes from (eventFile device) to the callback function 
-class kbdListenThread(threading.Thread):
-    def __init__(self,callback,eventFile):
+import queue
+from interception import *
+class interceptListenThread(threading.Thread):
+    def __init__(self,keyQueue):
         threading.Thread.__init__(self) 
-        self.callback = callback
-        self.name='kbdListenThread'
+        self.keyQueue = keyQueue
+        self.name='interceptThread'
     def run(self):
-        heldKeys = []
-        releasedKeys = []
+        global context
+        stroke = Stroke()
+        context = create_context()
+        set_filter( context, is_keyboard, FILTER_KEY_DOWN | FILTER_KEY_UP)
+        device = wait( context )
+        keyStroke = KeyStroke()
+        
+        print('intercept started')
         
         self.listening = True
+        while (self.listening == True):
+                device=wait(context)
+                if receive(context, device, stroke,1) == 0: continue
+                
+                if is_keyboard( device ):
+                    stroke2KeyStroke( stroke, dest = keyStroke )
+                    send(context,device, keyStroke,1)
+                    if checkLock() == False:continue
+                    
+                    kCode = win32api.MapVirtualKey(keyStroke.code,3) #MAPVK_VSC_TO_VK_EX
+                    if kCode in vkDict.keys():
+                        keyname = vkDict[kCode]
+                    else: keyname = 0
+                    
+                    self.keyQueue.put(({0:False,1:True}[keyStroke.state],(kCode,keyname)))
+                else:
+                    send(context,device, stroke,1)
+          
+        destroy_context(context)
+
+    def stop(self):
+        self.listening = False
+
+
+class kbdHookListenThread(threading.Thread):
+    def __init__(self,keyQueue):
+        threading.Thread.__init__(self) 
+        self.keyQueue = keyQueue
+        self.name='kbdHookListenThread'
+    def run(self):
+        
+        self.listening = True
+        heldKeys = []
+        releasedKeys=[]
+        
         while self.listening == True:
             time.sleep(0.001)
             
@@ -234,11 +275,12 @@ class kbdListenThread(threading.Thread):
             for heldKey in heldKeys:
                 if win32api.GetAsyncKeyState(heldKey)==0:
                     releasedKeys.append(heldKey)
-
-            for key in releasedKeys:
-                heldKeys.remove(key)
-            releasedKeys = []
             
+            for key in releasedKeys:
+                if key in heldKeys:
+                    heldKeys.remove(key)
+                    self.keyQueue.put((False,(key,'')))
+
             #find any new key presses
             for charkey in range(0,0xFF):
                 if win32api.GetAsyncKeyState(charkey)==-32767:
@@ -247,8 +289,34 @@ class kbdListenThread(threading.Thread):
                         if charkey in vkDict.keys():
                             keyname = vkDict[charkey]
                         else: keyname = 0
-                        print(charkey)
-                        self.callback(charkey,keyname)
+                        self.keyQueue.put((True,(charkey,keyname)))
+    def stop(self):
+        self.listening = False
+
+import win32con, win32api, time
+#passes keystrokes from (eventFile device) to the callback function 
+#used in the gui keyboard setup window
+class kbdProcessThread(threading.Thread):
+    def __init__(self,callback,eventFile):
+        threading.Thread.__init__(self) 
+        self.callback = callback
+        self.name='kbdListenThread'
+    def run(self):
+        keyQueue = queue.Queue()
+        
+        hookListener = kbdHookListenThread(keyQueue)
+        hookListener.start()
+        interceptListener = interceptListenThread(keyQueue)
+        interceptListener.start()
+
+        
+        self.listening = True
+        while self.listening == True:
+            eventType,eventDetails = keyQueue.get(True)
+            if eventType == True: self.callback(eventDetails[0],eventDetails[1])
+                        
+        if hookListener.is_alive(): hookListener.stop()
+        if interceptListener.is_alive(): interceptListener.stop()
                         
 
     def terminate(self):

@@ -20,6 +20,7 @@ from tooltip import createToolTip
 from tkinter import filedialog
 import winreg
 from PIL import Image, ImageTk
+import win32api
 
 lockStates = ('Screen Locked','Anytime','Never')
 
@@ -866,11 +867,17 @@ class MainWindow(Frame):
         Label(primaryFrame,text='Reccommended activation: Anytime').pack()
         Label(primaryFrame,text='"A quick-access panic switch for activation by the user."',width=48).pack()
         KSLLabel = Label(primaryFrame,text='Current Key Combination:').pack(pady=5)
-        KS1Label = Label(primaryFrame,text=config['TRIGGERS']['kbd_kill_combo_1'])
+        comboString = ''
+        for n in config['TRIGGERS']['kbd_kill_combo_1'].split('+'):
+            if int(n) in hardwareconfig.vkDict.keys():
+                comboString = comboString+hardwareconfig.vkDict[int(n)]+'+'
+            else: comboString = comboString+n+'+'
+            
+        KS1Label = Label(primaryFrame,text=comboString[:-1])
         KS1Label.pack()
         self.KS1Label = KS1Label
         
-        self.kbdThread = hardwareconfig.kbdListenThread(self.gotKbdKey,None)
+        self.kbdThread = hardwareconfig.kbdProcessThread(self.gotKbdKey,None)
         self.kbdThread.daemon = True
         self.kbdThread.start()
         
@@ -893,8 +900,13 @@ class MainWindow(Frame):
         
         Label(secondaryFrame,text='Reccommended activation: Screen Locked').pack()
         Label(secondaryFrame,text='"A false password containing this key is revealed to attackers."').pack()
-        KSLLabel = Label(secondaryFrame,text='Current Key Combination:').pack(pady=5)
-        KS2Label = Label(secondaryFrame,text=config['TRIGGERS']['kbd_kill_combo_2'])
+        Label(secondaryFrame,text='Current Key Combination:').pack(pady=5)
+        comboString = ''
+        for n in config['TRIGGERS']['kbd_kill_combo_2'].split('+'):
+            if int(n) in hardwareconfig.vkDict.keys():
+                comboString = comboString+hardwareconfig.vkDict[int(n)]+'+'
+            else: comboString = comboString+n+'+'
+        KS2Label = Label(secondaryFrame,text=comboString[:-1])
         KS2Label.pack()
         self.KS2Label = KS2Label
         
@@ -912,11 +924,39 @@ class MainWindow(Frame):
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
         
+        
+        if os.path.exists('C:\Windows\System32\drivers\keyboard.sys'):
+            frameText='Interception Driver Status: Installed'
+        else: frameText='Interception Driver Status: Not Installed'
+        
+        ICLabelFrame = ttk.LabelFrame(parent,text=frameText)
+        ICLabelFrame.pack(pady=5)
+        Label(ICLabelFrame,text='The Interception driver is required to capture keystrokes while locked').pack()
+        
+        ICBtns = Frame(ICLabelFrame)
+        ICBtns.pack()
+        installFunc = lambda: self.installIntercept('install')
+        Button(ICBtns,text='Install Interception',command=installFunc).pack(side=LEFT,padx=4)
+        uninstallFunc = lambda: self.installIntercept('uninstall')
+        Button(ICBtns,text='Uninstall Interception',command=uninstallFunc).pack(side=RIGHT,padx=4)
+        Label(ICLabelFrame,text='A reboot is required to complete these operations').pack()
+        
+    def installIntercept(self,task):
+        
+        try:
+            win32api.ShellExecute(0,
+                                  "open",
+                                  '.\install-interception.exe',
+                                  "/%s"%task,
+                                  ".",1)
+        except win32api.error as e:
+            self.addMessage('Interception %s failed: %s'%(task,e.args[2]))
+     
     def saveKbdCombo(self,number):
             newcombo = ''
             for x in self.KCodes:
-                newcombo = newcombo+str(x)+','
-            newcombo = newcombo.strip(',')
+                newcombo = newcombo+str(x)+'+'
+            newcombo = newcombo.strip('+')
 
             if number == 1:
                 config['TRIGGERS']['kbd_kill_combo_1'] = newcombo

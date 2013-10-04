@@ -482,9 +482,6 @@ class keyboardMonitor(threading.Thread):
         threading.Thread.__init__(self)
         self.name = 'KeyboardMonitor'
     def run(self):
-        heldKeys = []
-        releasedKeys = []
-        
         primaryKillKeys = {}
         for key in fileconfig.config['TRIGGERS']['kbd_kill_combo_1'].split('+'):
             primaryKillKeys[int(key)] = False
@@ -496,39 +493,32 @@ class keyboardMonitor(threading.Thread):
         watchKeys = list(primaryKillKeys.keys())+list(secondaryKillKeys.keys())
         watchKeys = list(set(watchKeys))
         
+        keyQueue = queue.Queue()
+        hookListener = hardwareconfig.kbdHookListenThread(keyQueue)
+        hookListener.start()
+        interceptListener = hardwareconfig.interceptListenThread(keyQueue)
+        interceptListener.start()
+        
         self.listening = True
         eventQueue.put(("Status",'killSwitch',"Active"))
         while self.listening == True:
-            time.sleep(0.001)
+            eventType,eventDetails = keyQueue.get(True)
+            key = eventDetails[0]
+            print(eventType,eventDetails)
             
-            #stop keyholding from sending multiple keypresses
-            for heldKey in heldKeys:
-                if win32api.GetAsyncKeyState(heldKey)==0:
-                    releasedKeys.append(heldKey)
+            if key in primaryKillKeys.keys(): 
+                primaryKillKeys[key] = eventType
+            if key in secondaryKillKeys.keys(): 
+                secondaryKillKeys[key] = eventType
+
+            for keyState in primaryKillKeys.values():
+                if keyState == False: break
+            else:
+                eventHandle('E_KILL_SWITCH_1',"Kill switch 1 pressed")
                     
-            for key in releasedKeys:
-                heldKeys.remove(key)
-                if key in primaryKillKeys.keys(): primaryKillKeys[key] = False
-                if key in secondaryKillKeys.keys(): secondaryKillKeys[key] = False
-            releasedKeys = []
-            
-            #find any new key presses
-            for charkey in watchKeys:
-                if win32api.GetAsyncKeyState(charkey)==-32767:
-                    if charkey not in heldKeys:
-                        heldKeys.append(charkey)
-                        if charkey in primaryKillKeys.keys(): primaryKillKeys[charkey] = True
-                        if charkey in secondaryKillKeys.keys(): secondaryKillKeys[charkey] = True
-                        
-                        
-                        for keyState in primaryKillKeys.values():
-                            if keyState == False: break
-                        else:
-                            eventHandle('E_KILL_SWITCH_1',"Kill switch 1 pressed")
-                                
-                        for keyState in secondaryKillKeys.values():
-                            if keyState == False: break 
-                        else: eventHandle('E_KILL_SWITCH_2',"Kill switch 2 pressed")
+            for keyState in secondaryKillKeys.values():
+                if keyState == False: break 
+            else: eventHandle('E_KILL_SWITCH_2',"Kill switch 2 pressed")
 
                             
         eventQueue.put(("Status",'killSwitch',"Not Active"))
