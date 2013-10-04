@@ -834,6 +834,7 @@ class MainWindow(Frame):
     def exampleShow(self,category):
         d = exampleDialog(root,category)
     
+    KCodes = []
     def createKeyboardPanel(self,parent):
         
         Label(parent,text='Setup a killswitch combination of one or more keys').pack(padx=5)
@@ -846,29 +847,38 @@ class MainWindow(Frame):
         self.IMVar = IMVar
         showKeysBox = Entry(entryFrame,textvariable=IMVar,width=40,state=DISABLED)
         showKeysBox.pack(side=LEFT, fill=X, expand=YES)
+        showKeysBox.focus_set()
         self.showKeysBox = showKeysBox
         
-        Button(entryFrame,text='Clear',command=(lambda: self.IMVar.set(''))).pack(side=RIGHT, fill=X, expand=YES)
+        Button(entryFrame,text='Clear',command=self.clearKeys).pack(side=RIGHT, fill=X, expand=YES)
         
-        KSRecordBtn = Button(parent,text='Save as killswitch combination')
+        KSRecordBtn = Button(parent,text='Set as primary killswitch',command = (lambda:self.saveKbdCombo(1)))
         KSRecordBtn.pack()
-        KSRecordBtn.bind('<Button-1>',self.saveKbdCombo) 
-        self.kbdRecordBtn = KSRecordBtn
         
-        KSLLabel = Label(parent,text='Current Killswitch Key Combination:').pack(pady=5)
-        KSLabel = Label(parent,text=config['TRIGGERS']['kbd_kill_combo'])
-        KSLabel.pack()
-        self.KSLabel = KSLabel
+        KSRecordBtn = Button(parent,text='Set as secondary killswitch',command = (lambda:self.saveKbdCombo(2)))
+        KSRecordBtn.pack()
+        
+
+
+        primaryFrame =  ttk.LabelFrame(parent,text="Primary killswitch",borderwidth=1,relief=GROOVE)
+        primaryFrame.pack(pady=5,padx=5)
+        
+        Label(primaryFrame,text='Reccommended activation: Anytime').pack()
+        Label(primaryFrame,text='"A quick-access panic switch for activation by the user."',width=48).pack()
+        KSLLabel = Label(primaryFrame,text='Current Key Combination:').pack(pady=5)
+        KS1Label = Label(primaryFrame,text=config['TRIGGERS']['kbd_kill_combo_1'])
+        KS1Label.pack()
+        self.KS1Label = KS1Label
         
         self.kbdThread = hardwareconfig.kbdListenThread(self.gotKbdKey,None)
         self.kbdThread.daemon = True
         self.kbdThread.start()
         
-        triggerFrame =  ttk.LabelFrame(parent,text="Trigger Condition",borderwidth=1,relief=GROOVE)
+        triggerFrame =  ttk.LabelFrame(primaryFrame,text="Trigger Condition",borderwidth=1,relief=GROOVE)
         triggerFrame.pack(pady=5)
         createToolTip(triggerFrame, "Choose when the trigger will cause an emergency shutdown")
         
-        triggerName = 'E_KILL_SWITCH'
+        triggerName = 'E_KILL_SWITCH_1'
         trigBox =  ttk.Combobox(triggerFrame,values=lockStates,state='readonly',name=triggerName.lower())
         if triggerName in config['TRIGGERS']['lockedtriggers'].split(','):
             trigBox.current(0)
@@ -878,23 +888,70 @@ class MainWindow(Frame):
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
         
-    def saveKbdCombo(self,event):
-            newcombo = self.showKeysBox.get()
-            config['TRIGGERS']['kbd_kill_combo'] = self.showKeysBox.get()
+        secondaryFrame =  ttk.LabelFrame(parent,text="Secondary killswitch",borderwidth=1,relief=GROOVE)
+        secondaryFrame.pack(pady=5,padx=5)
+        
+        Label(secondaryFrame,text='Reccommended activation: Screen Locked').pack()
+        Label(secondaryFrame,text='"A false password containing this key is revealed to attackers."').pack()
+        KSLLabel = Label(secondaryFrame,text='Current Key Combination:').pack(pady=5)
+        KS2Label = Label(secondaryFrame,text=config['TRIGGERS']['kbd_kill_combo_2'])
+        KS2Label.pack()
+        self.KS2Label = KS2Label
+        
+        triggerFrame =  ttk.LabelFrame(secondaryFrame,text="Trigger Condition",borderwidth=1,relief=GROOVE)
+        triggerFrame.pack(pady=5)
+        createToolTip(triggerFrame, "Choose when the trigger will cause an emergency shutdown")
+        
+        triggerName = 'E_KILL_SWITCH_2'
+        trigBox =  ttk.Combobox(triggerFrame,values=lockStates,state='readonly',name=triggerName.lower())
+        if triggerName in config['TRIGGERS']['lockedtriggers'].split(','):
+            trigBox.current(0)
+        elif triggerName in config['TRIGGERS']['alwaystriggers'].split(','):
+            trigBox.current(1)
+        else: trigBox.current(2)
+        trigBox.pack()
+        trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
+        
+    def saveKbdCombo(self,number):
+            newcombo = ''
+            for x in self.KCodes:
+                newcombo = newcombo+str(x)+','
+            newcombo = newcombo.strip(',')
+
+            if number == 1:
+                config['TRIGGERS']['kbd_kill_combo_1'] = newcombo
+                self.KS1Label.config(text=self.showKeysBox.get())
+            else:
+                config['TRIGGERS']['kbd_kill_combo_2'] = newcombo
+                self.KS2Label.config(text=self.showKeysBox.get())
             fileconfig.writeConfig()
-            self.KSLabel.config(text=newcombo)
             
-    def gotKbdKey(self,key):
-        text = self.showKeysBox.get()
+    def clearKeys(self):
+        self.IMVar.set('')
+        self.KCodes = []
+    
+    def gotKbdKey(self,key,keyName):
+        if key == 0x01: return #bad things happen if mouse L used
+        try:
+            text = self.showKeysBox.get()
+        except:
+            pass #some keys move focus around and mess things up
         if len(text) > 30:
             self.IMVar.set('')
             text = ''
-            
-        if 'appear' in text or len(text)==0:
-            text = str(key)
+        
+        if keyName != 0:
+            keyStr = keyName
         else:
-            text = text+'+'+str(key)    
+            keyStr = str(key)
+        keyStr = '('+keyStr+')'
+              
+        if 'appear' in text or len(text)==0:
+            text = keyStr
+        else:
+            text = text+'+'+keyStr    
         self.IMVar.set(text)
+        self.KCodes.append(key)
     
     def createNetworkPanel(self,parent):
         

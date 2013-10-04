@@ -100,10 +100,11 @@ if not os.path.exists(CONFIG_FILE):
     config.add_section('TRIGGERS')
     trig = config['TRIGGERS']
     trig['bluetooth_device_id']=''
-    trig['kbd_kill_combo']=''
+    trig['kbd_kill_combo_1']=''
+    trig['kbd_kill_combo_2']=''
     trig['low_temp']='21'
-    trig['lockedtriggers']='E_DEVICE,E_NETCABLE,E_CHASSIS_MOTION,E_ROOM_MOTION,E_NET_CABLE_IN,E_NET_CABLE_OUT'
-    trig['alwaystriggers']='E_KILL_SWITCH'
+    trig['lockedtriggers']='E_DEVICE,E_NETCABLE,E_CHASSIS_MOTION,E_ROOM_MOTION,E_NET_CABLE_IN,E_NET_CABLE_OUT,E_KILL_SWITCH_2'
+    trig['alwaystriggers']='E_KILL_SWITCH_1'
     trig['dismount_tc']='False'
     trig['exec_shellscript']='False'
     trig['adapterconguids']=''

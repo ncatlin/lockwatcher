@@ -485,36 +485,51 @@ class keyboardMonitor(threading.Thread):
         heldKeys = []
         releasedKeys = []
         
-        killKeys = {}
-        for key in fileconfig.config['TRIGGERS']['kbd_kill_combo'].split('+'):
-            killKeys[int(key)] = False
+        primaryKillKeys = {}
+        for key in fileconfig.config['TRIGGERS']['kbd_kill_combo_1'].split('+'):
+            primaryKillKeys[int(key)] = False
+            
+        secondaryKillKeys = {}
+        for key in fileconfig.config['TRIGGERS']['kbd_kill_combo_2'].split('+'):
+            secondaryKillKeys[int(key)] = False
+        
+        watchKeys = list(primaryKillKeys.keys())+list(secondaryKillKeys.keys())
+        watchKeys = list(set(watchKeys))
         
         self.listening = True
         eventQueue.put(("Status",'killSwitch',"Active"))
         while self.listening == True:
-            time.sleep(0.002)
+            time.sleep(0.001)
             
             #stop keyholding from sending multiple keypresses
             for heldKey in heldKeys:
                 if win32api.GetAsyncKeyState(heldKey)==0:
                     releasedKeys.append(heldKey)
-
+                    
             for key in releasedKeys:
                 heldKeys.remove(key)
-                killKeys[key] = False
+                if key in primaryKillKeys.keys(): primaryKillKeys[key] = False
+                if key in secondaryKillKeys.keys(): secondaryKillKeys[key] = False
             releasedKeys = []
             
             #find any new key presses
-            for charkey in killKeys.keys():
+            for charkey in watchKeys:
                 if win32api.GetAsyncKeyState(charkey)==-32767:
                     if charkey not in heldKeys:
                         heldKeys.append(charkey)
-                        killKeys[charkey] = True
+                        if charkey in primaryKillKeys.keys(): primaryKillKeys[charkey] = True
+                        if charkey in secondaryKillKeys.keys(): secondaryKillKeys[charkey] = True
                         
-                        for keyState in killKeys.values():
+                        
+                        for keyState in primaryKillKeys.values():
                             if keyState == False: break
                         else:
-                            eventHandle('E_KILL_SWITCH',"Kill switch pressed")
+                            eventHandle('E_KILL_SWITCH_1',"Kill switch 1 pressed")
+                                
+                        for keyState in secondaryKillKeys.values():
+                            if keyState == False: break 
+                        else: eventHandle('E_KILL_SWITCH_2',"Kill switch 2 pressed")
+
                             
         eventQueue.put(("Status",'killSwitch',"Not Active"))
     def terminate(self):
@@ -610,17 +625,14 @@ def startMonitor(threadDict,trigger):
             elif trigger == 'E_BLUETOOTH':
                 threadDict['BTMonitor'] = BTMonitor() 
                 threadDict['BTMonitor'].start()             
-            elif trigger == 'E_CHASSIS_MOTION':
-                if 'cameraMonitor' not in threadDict.keys():
+            elif trigger == 'E_CHASSIS_MOTION' or trigger == 'E_ROOM_MOTION':
+                if 'cameraMonitor' not in threadDict.values():
                     threadDict['cameraMonitor'] = cameraMonitor()  
                     threadDict['cameraMonitor'].start()   
-            elif trigger == 'E_ROOM_MOTION':
-                if 'cameraMonitor' not in threadDict.keys():
-                    threadDict['cameraMonitor'] = cameraMonitor()
-                    threadDict['cameraMonitor'].start()
-            elif trigger == 'E_KILL_SWITCH':
-                threadDict['keyboardMonitor'] = keyboardMonitor()
-                threadDict['keyboardMonitor'].start()
+            elif trigger == 'E_KILL_SWITCH_1' or trigger == 'E_KILL_SWITCH_2':
+                if 'keyboardMonitor' not in threadDict.values():
+                    threadDict['keyboardMonitor'] = keyboardMonitor()
+                    threadDict['keyboardMonitor'].start()
             elif trigger == 'email':
                 threadDict['email'] = emailMonitor()    
                 threadDict['email'].start()
