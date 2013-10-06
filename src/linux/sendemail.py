@@ -10,11 +10,10 @@ from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email import encoders
 
-import lwconfig
-from lwconfig import config, printMessage
+from fileconfig import config#, printMessage
 
 #use a HMAC to prevent impersonation/replay
-secret = bytes(lwconfig.HMAC_SECRET,'UTF-8')
+secret = bytes(config['EMAIL']['email_secret'],'UTF-8')
 def validHMAC(code,command):
             timenow = time.strftime('%d%m%Y%H%M') #day,month,year,hour,minute
             validTimes = (str(int(timenow)-1),timenow,str(int(timenow)+1)) #1 minute leeway
@@ -35,14 +34,18 @@ def validHMAC(code,command):
 
 def doSend(msg):
     try:
-        s = smtplib.SMTP(lwconfig.EMAIL_SMTP_HOST)
-        s.login(lwconfig.EMAIL_USERNAME, lwconfig.EMAIL_PASSWORD)
-        s.sendmail(msg['To'],lwconfig.EMAIL_USERNAME, msg.as_string())
-        printMessage('Connected to smtp server')       
-    except InterruptedError:
-        printMessage('smtp connect error %s'%sys.exc_info()[0])
+        s = smtplib.SMTP(config['EMAIL']['EMAIL_SMTP_HOST'])
+        s.login(config['EMAIL']['EMAIL_USERNAME'], config['EMAIL']['EMAIL_PASSWORD'])
+        s.sendmail(msg['To'],msg['From'], msg.as_string())      
+    except InterruptedError as e:
+        return 'SMTP connect error %s'%e
+    except smtplib.SMTPRecipientsRefused as e:
+        return 'Bad email recipient: %s'%msg['To']
+    except smtplib.SMTPServerDisconnected as e:
+        return 'Server closed connection. It may think that sender address "%s" looks like a spam email address'%msg['From']
     except:
-        printMessage("Unexpected error: %s"%sys.exc_info()[0])
+        return "Unexpected error: %s"%sys.exc_info()[0]
+    return True
         
 def sendEmail(subject,message,attachment=None):
 
@@ -61,11 +64,8 @@ def sendEmail(subject,message,attachment=None):
     msg['From'] = config['EMAIL']['COMMAND_EMAIL_ADDRESS']
     msg['To'] = config['EMAIL']['ALERT_EMAIL_ADDRESS']
     
-    try:
-        doSend(msg)
-        printMessage('smtp: mail sent with subject "%s"'%subject)   
-    except:
-        printMessage('send failed %s'%sys.exc_info()[0])
+    result = doSend(msg)
+    return result
     
         
     
