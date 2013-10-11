@@ -9,6 +9,7 @@ import socket, subprocess
 import re, os, time
 import string, random, threading
  
+import devdetect
 import fileconfig, hardwareconfig
 from fileconfig import config
 import winsockbtooth
@@ -47,11 +48,11 @@ optionCategories = {OPT_STATUS:'Status',
 lwMonitorThread = None
 
 DEBUGMODE = False
+CREATELW = False
 if DEBUGMODE == True:
-    import devdetect
-    devdetect.createLockwatcher()
-    devdetect.monitorThread.start()
-    pass
+    if CREATELW == True:
+        devdetect.createLockwatcher()
+        devdetect.monitorThread.start()
 
 root = Tk()
 root.wm_iconbitmap('favicon.ico')
@@ -198,6 +199,13 @@ def sendToLockwatcher(msg):
         s.send(msg.encode())
         s.close()
 
+def lwServiceStatus():
+    c = wmi.WMI ()
+    lwServiceStatus = c.Win32_Service (["State"],Caption="Lockwatcher")
+    if lwServiceStatus == []: return None
+    else: return lwServiceStatus[0].State
+    
+
 class MainWindow(Frame):
     kbdThread = None
     tempThread = None
@@ -337,9 +345,7 @@ class MainWindow(Frame):
             return
         
         self.sStatusText = StringVar()
-        self.sButtonText = StringVar()
         Label(parent,textvariable=self.sStatusText).pack(pady=5)
-        Button(parent,textvariable=self.sButtonText,command=self.lwActivate).pack(pady=5)
         
         self.threadFrames = Frame(parent)
         
@@ -413,69 +419,26 @@ class MainWindow(Frame):
         self.sNAOutLabel = NAOutLabel
         Frame4.pack()
         
-
-        
-        startupRun = 'False'
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Run",0,winreg.KEY_READ)
-            [path,dtype] =  winreg.QueryValueEx(key, 'lockwatcher')
-            
-            if path == __file__:
-                startupRun = 'True'    
-        except WindowsError:
-            pass
-        
-
-        self.loadOnStartCheck = StringVar()
-        self.loadOnStartCheck.set(startupRun)
-        checkLoadOnStart = Checkbutton(parent,text="Load lockwatcher when Windows starts",variable=self.loadOnStartCheck,
-                                    onval='True',offval='False',command=(lambda: self.setLoadOnStart(self.loadOnStartCheck.get())))
-        checkLoadOnStart.pack()
-        
-        self.immediateMonitor = StringVar()
-        self.immediateMonitor.set(config['TRIGGERS']['immediatestart'])
-        checkImmediateRun = Checkbutton(parent,text="Activate monitoring when lockwatcher starts",variable=self.immediateMonitor,
-                                    onval='True',offval='False',command=(lambda: self.changeCheckBox('TRIGGERS:immediatestart',self.immediateMonitor)))
-        checkImmediateRun.pack()
-        
         if DEBUGMODE == True:
-            if devdetect.monitorThread != None:
-                serviceRunning = devdetect.monitorThread.is_alive()
-            else: 
-                #serviceRunning = False
-                serviceRunning = True
+            status = 'Running'
         else:
             threadAlive = False
-            
-            c = wmi.WMI ()
-            lwServiceDetails = c.Win32_Service (["State"],Caption="Lockwatcher")
-            if lwServiceDetails == []:
-                #not installed
-                print('lw not installed')
-                serviceInstalled = False
-                serviceRunning = False
-            else: 
-                serviceInstalled = True
-                if lwServiceDetails[0].State == 'Running':
-                    print('lockwatcher is running')
-                    serviceRunning = True
-                else: 
-                    print('lw stopped')
-                    serviceRunning = False
+            status = lwServiceStatus()
             
         
-        if serviceRunning == True:
+        if status == 'Running':
             if self.firstRun == True:
                 self.setupMonitorStrings()
                 sendToLockwatcher('newListener:%s'%lwMonitorThread.listenPort)
                 while lwMonitorThread.listening == False:
                     time.sleep(0.1)
+                    #check for timeout
+                    
                 sendToLockwatcher('getStatuses')
                 self.firstRun = False
                 
                 
-            self.sStatusText.set("Lockwatcher is monitoring your system")
-            self.sButtonText.set("Stop lockwatcher")
+            self.sStatusText.set("The Lockwatcher service is running")
             
             #give the statuses their appropriate colour
             self.threadFrames.pack(pady=20)
@@ -483,15 +446,17 @@ class MainWindow(Frame):
             for triggerName,trigger in self.threadStatus.items():
                 self.statusChange(triggerName, trigger)
         else:
-            if serviceInstalled == True:
+            if status  != []:
                 self.sStatusText.set("The Lockwatcher service is not running")
-                self.sButtonText.set("Start lockwatcher")
             else:
-                self.sStatusText.set("The Lockwatcher service is not registered with Windows")
-                self.sButtonText.set("Register Lockwatcher")
-                devdetect.installService(True)
-            
-        
+                try:
+                    devdetect.installService(True)
+                except:
+                    self.sStatusText.set("The Lockwatcher service is not registered with Windows.\nRun this program in administrator mode to register it.")
+                time.sleep(1)
+                self.settingFrame.destroy()
+                self.createStatusPanel(self.settingFrame)
+                
             
     
     def setupMonitorStrings(self):
@@ -505,28 +470,6 @@ class MainWindow(Frame):
             else: triggerStr.set(defaultStr)
             
             triggerStr.trace("w", lambda name, index, mode, triggerName=triggerName, triggerStr=triggerStr: self.statusChange(triggerName,triggerStr))
-        
-    def setLoadOnStart(self,currentState):
-        rights = winreg.KEY_WRITE
-        if currentState == 'True':
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Run",0,rights)
-            try:
-                [path,dtype] =  winreg.QueryValueEx(key, 'lockwatcher')
-                
-                if path == __file__:
-                    print('already working, what?')
-                else:
-                    winreg.SetValueEx(key, 'lockwatcher',0,winreg.REG_SZ,  __file__)  
-                    print('setvalue1')
-            except WindowsError:
-                winreg.SetValueEx(key, 'lockwatcher',0,winreg.REG_SZ, __file__) 
-                print('setvalue2')
-        else:
-            try:
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Run",0,rights)
-                winreg.DeleteValue(key, 'lockwatcher')   
-            except WindowsError as e:
-                print('didnt exist? or permission i dunno: ',e)
         
            
     def rClick(self,frame):
@@ -618,41 +561,6 @@ class MainWindow(Frame):
         except:
             #user probably destroyed label by changing tab, don't care  
             pass
-    
-    updateThread = None
-    def lwActivate(self):
-        #if devdetect.monitorThread != None:
-        #    threadAlive = devdetect.monitorThread.is_alive()
-        #else: threadAlive = False
-        threadAlive = True
-        if threadAlive == False:
-            '''
-            self.sStatusText.set("Lockwatcher is active")
-            self.sButtonText.set("Stop lockwatcher")
-            
-            self.threadFrames.pack(pady=20)
-            
-            devdetect.createLockwatcher(self.threadStatus,self.addMessage)
-            devdetect.monitorThread.start()
-            
-            sendToLockwatcher('newListener:22195')
-            
-            print('client: waiting for incoming connection')
-            while(lwMonitorThread.listening == False):
-                time.sleep(0.1)
-            print('connection established!')
-            sendToLockwatcher('getStatuses')
-            '''
-            pass
-        else:
-            self.sStatusText.set("Lockwatcher is not active")
-            self.sButtonText.set("Start lockwatcher")
-            #devdetect.eventQueue.put(('stop','Stop Command Received'))
-            #while devdetect.monitorThread.is_alive():
-            #    time.sleep(0.2)
-            #devdetect.monitorThread = None
-            self.threadFrames.pack_forget()
-            
     
     def newStatus(self,threadname,text): 
         
@@ -1543,6 +1451,4 @@ class MainWindow(Frame):
 app = MainWindow(master=root)
 root.mainloop()
 
-#if devdetect.monitorThread != None and devdetect.monitorThread.is_alive():
-#    devdetect.eventQueue.put(('stop',None))
 lwMonitorThread.stop()

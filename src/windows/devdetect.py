@@ -11,9 +11,10 @@ import AFroutines
 import fileconfig, hardwareconfig, sendemail, winsockbtooth
 
 import threading, queue, subprocess
+import select
 import os,time,datetime
 import imapclient
-import wmi 
+import wmi, win32timezone #cx_freeze doesn't seem to get this unless imported explicitly
 from pythoncom import CoInitialize, CoUninitialize
 
 eventQueue = None
@@ -34,6 +35,16 @@ def eventHandle(event_type,eventReason):
         if event_type != 'E_KILL_SWITCH_2':
             eventQueue.put(("Log","[%s - Trigger ignored]. %s"%(lockedStateText[locked],eventReason)))
     
+#running as a service makes exception handling more difficult
+#write log directly instead of relying on eventqueue processing    
+def debugLog(msg):
+    logPath = fileconfig.config['TRIGGERS']['logfile']
+    try:
+        fd = open(logPath,'a+')
+        fd.write(time.strftime('[%x %X]')+str(msg)+'\n') 
+        fd.close()
+    except:
+        eventQueue.put(('Log','Failed to write debuglog: %s'%msg))
 
 #check for logical disk creation events like cdrom insertion          
 class logicalDiskCreateMonitor(threading.Thread):
@@ -64,7 +75,7 @@ class logicalDiskRemoveMonitor(threading.Thread):
     def run(self):
         CoInitialize()
         self.c = wmi.WMI()
-        self.watcher = self.c.Win32_LogicalDisk.watch_for("deletion") #operation might be a bit strong
+        self.watcher = self.c.Win32_LogicalDisk.watch_for("deletion")
         #disksOfInterest = [2,5,6] #removable,cdrom,ramdisk
         
         self.running = True
@@ -495,7 +506,7 @@ class cameraMonitor(threading.Thread):
         self.running = False 
         self.socket.shutdown(socket.SHUT_RD)
         self.socket.close()
-        
+   
 #receive commands from from config programs
 class configMonitor(threading.Thread):
     def __init__(self):
@@ -514,16 +525,23 @@ class configMonitor(threading.Thread):
         self.running = True
         while self.running == True:
             try:
-                print('Server Waiting data')#debugmode
-                data = s.recv(1024)
+                ready = select.select([s],[],[],120)
+                if not ready[0]: continue
             except socket.error:
                 if self.running == False: break
-                s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
-                s.bind( ('127.0.0.1', 22191) )
+                debugLog('Socketerror in configmonitor %s'%str(sys.exc_info()))
+    
+                try:
+                    s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+                    s.bind(('127.0.0.1', 22191))
+                    self.socket = s
+                except:
+                    debugLog('Socketerror in configmonitor rebinding.. %s'%str(sys.exc_info()))
+                
                 continue
             
-            command = data.decode('UTF-8')
-            print('server recvd data: %s'%command) #debugmode
+            data = s.recv(1024)
+            command = data.decode('UTF-8')             
             
             if ':' in command: 
                 command,value = command.split(':')
@@ -771,7 +789,6 @@ class lockwatcher(threading.Thread):
         while True:
             event = eventQueue.get(block=True, timeout=None)
             eventType = event[0]
-            #if eventType != 'Log': eventQueue.put(('Log','processing event: %s'%event))
             
             #--------------trigger activated under shutdown conditions
             if eventType == 'Kill':
@@ -877,7 +894,7 @@ class lockwatcher(threading.Thread):
             elif eventType == 'newListener':
                 port = int(event[1])
                 s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-                print('Server attempting to connect to port %s'%port)  #debugmode
+                eventQueue.put(('Log','Server attempting to connect to port %s'%port))  #debugmode
                 try:
                     s.connect( ('127.0.0.1', port) )
                 except: 
@@ -968,7 +985,10 @@ class lockwatcherSvc (win32serviceutil.ServiceFramework):
                               servicemanager.PYS_SERVICE_STARTED,
                               (self._svc_name_,''))
 
-        self.main()
+        try:
+            self.main()
+        except:
+            debugLog('EXCEPTION %s in main'%str(sys.exc_info()[0]))
 
     def main(self):
         createLockwatcher()
@@ -982,7 +1002,6 @@ def installService(install=True):
     
         cls = lockwatcherSvc
         try:
-            servicemanager.LogErrorMsg('unintrtgfxhdh')
             win32serviceutil.RemoveService( cls._svc_name_)
         except: pass
         
@@ -994,6 +1013,4 @@ def installService(install=True):
             win32serviceutil.InstallService(serviceClassString, serviceName, serviceDisplayName, 
                                             startType=win32service.SERVICE_DEMAND_START,  
                                             exeName='pythonservice.exe', description='Monitors for possible tampering and reacts accordingly')
-#installService(False)
-
         
