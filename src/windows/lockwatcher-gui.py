@@ -47,6 +47,10 @@ optionCategories = {OPT_STATUS:'Status',
 
 lwMonitorThread = None
 
+
+VERBOSELOGS = False
+#run lockwatcher as a thread instead of a service
+
 DEBUGMODE = False
 CREATELW = False
 if DEBUGMODE == True:
@@ -106,11 +110,9 @@ class updateListenThread(threading.Thread):
             try:
                 self.s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
                 self.s.bind(('127.0.0.1', port))
-                print('bound port',port)
                 break
             except:
                 self.s.close()
-                print('Exception ',sys.exc_info()[0])
                 port = random.randint(22193,22900)
                 attempts = attempts + 1
                 continue
@@ -122,12 +124,10 @@ class updateListenThread(threading.Thread):
 
     def run(self):
         if self.listenPort == None: 
-            print('no bound port, updatelistenthread exiting')
             return
         self.s.listen(1)
         self.running = True
         while self.running == True:
-            print('client ready to accept connection')
             try:
                 conn,addr = self.s.accept()
             except:
@@ -141,11 +141,11 @@ class updateListenThread(threading.Thread):
             conEstablished = False
             self.listening = True
             
-            self.logCallback('client connected.. ready to recv data')
+            if VERBOSELOGS == True: self.logCallback('Connection to lockwatcher established. Ready for data.')
             while self.listening == True:
                 try:
                     data = conn.recv(1024).decode('UTF-8')
-                    self.logCallback('got data '+data)
+                    if VERBOSELOGS == True: self.logCallback('Got data from lockwatcher: '+data)
                 except socket.error:
                     break
                 
@@ -473,7 +473,6 @@ class MainWindow(Frame):
         
            
     def rClick(self,frame):
-        print('clicked ',frame.widget._name)
         commands=[
                ('Start', lambda frame=frame: self.optMonClicked(frame,'startMonitor')),
                ('Stop', lambda frame=frame: self.optMonClicked(frame,'stopMonitor'))
@@ -563,10 +562,7 @@ class MainWindow(Frame):
             pass
     
     def newStatus(self,threadname,text): 
-        
         self.threadStatus[threadname].set(text)
-        
-        print('gui got data: %s ---- %s\n'%(threadname,text))
     
     def newLog(self,msg): 
         try:

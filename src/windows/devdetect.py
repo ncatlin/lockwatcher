@@ -372,12 +372,14 @@ class BTMonitor(threading.Thread):
                 eventQueue.put(("Status",'bluetooth',"Error: No Bluetooth"))
                 eventQueue.put(("Log","Bluetooth: Error 10050: Bluetooth not enabled"))
             else:
-                eventQueue.put(("Log",'Bluetooth: other error: %s'%result))
                 eventQueue.put(("Status",'bluetooth','Error: %s'%result))
+                eventQueue.put(("Log",'Bluetooth: other error: %s'%result))
+                
             return 
         
         self.socket = result
-        eventQueue.put(("Status",'Bluetooth','Active'))
+        eventQueue.put(("Log",'Bluetooth: Connected to device %s'%deviceIDStr))
+        eventQueue.put(("Status",'bluetooth','Active'))
         while self.running == True:
             error,result=winsockbtooth.recv(self.socket)
             if error == True:
@@ -519,7 +521,6 @@ class configMonitor(threading.Thread):
             self.socket = s
         except:
             eventQueue.put(("Log","Can't bind socket 22191"))
-            print('socket error in cmon')
             return
         
         self.running = True
@@ -636,17 +637,18 @@ def executeRemoteCommand(command):
         #cant check ispy camera status, just have to assume it was not monitoring
         iSpyPath = fileconfig.config['TRIGGERS']['ispy_path']
         roomCamID = fileconfig.config['TRIGGERS']['room_cam_id']
+        eventQueue.put(("Log","Starting room camera after remote command"))
         subprocess.call([iSpyPath,'commands bringonline,2,%s'%roomCamID])
         sendemail.sendEmail("Command successful","Movement monitoring initiated. Have a nice day.")
-        eventQueue.put(("Log","Movement monitoring initiated after remote command"))
+        
         
     elif command == REMOTE_STOPMONITOR:
         #cant check ispy camera status, just have to assume it was already monitoring
         iSpyPath = fileconfig.config['TRIGGERS']['ispy_path']
         roomCamID = fileconfig.config['TRIGGERS']['room_cam_id']
+        eventQueue.put(("Log","Stopping room camera after remote command"))
         subprocess.call([iSpyPath,'commands takeoffline,2,%s'%roomCamID])
         sendemail.sendEmail("Command successful","Movement monitoring disabled. Welcome home!")
-        eventQueue.put(("Log","Movement monitoring disabled after remote command"))
         
     elif command == REMOTE_SHUTDOWN:
         sendemail.sendEmail("Command successful","Shutting down...")
@@ -741,10 +743,9 @@ def broadcast(listeners,msg):
              
 
 class lockwatcher(threading.Thread):
-    def __init__(self,statuses,msgAddFunc):
+    def __init__(self):
         threading.Thread.__init__(self)
         self.name = 'Lockwatcher'
-        self.msgAdd = msgAddFunc
     def run(self):
         
         #send log/status updates to connections in here - for config programs
@@ -870,31 +871,49 @@ class lockwatcher(threading.Thread):
                         threadDict[threadname] = None
             
             elif eventType == 'Mail':
-                command, code = event[1].split(' ')
-                
-                eventQueue.put(('Log','Received mail %s %s'%(command,code)))
-                command = int(command)
-                if command in commandList and sendemail.validHMAC(code,command) == True:
+                #malformed emails would be a good way of crashing lockwatcher
+                #be careful to valididate mail here
+                validMail = True
+                try:
+                    command, code = event[1].split(' ')
+                    eventQueue.put(('Log','Received mail "%s %s"'%(command,code)))
+                except:
+                    validMail = False
+                    
+                #forgive bad command codes - crappy attack and causes
+                #loop if we look at our returned emails with same sender/recv addresss
+                if validMail == True:
+                    try: 
+                        command = int(command)
+                        if command not in commandList:
+                            continue
+                    except:
+                        continue
+                    
+                if validMail == True and sendemail.validHMAC(code,command) == True:
                     executeRemoteCommand(command) 
                     badCommands = 0 #good command resets limit
                 else:
                     badCommands += 1
-                    sendemail.sendEmail("Command failed","Bad command or authentication code received: %s"%command)
-                    self.msgAdd('Mail not authenticated or bad command: %s'%command)
+                    sendemail.sendEmail("Command failed","Bad command or authentication code received: %s"%str(event[1]))
+                    eventQueue.put(('Log','Mail not authenticated or bad command: %s'%str(event[1])))
                     badCommandLimit = int(fileconfig.config['EMAIL']['BAD_COMMAND_LIMIT'])
                     if badCommandLimit > 0 and badCommands >= badCommandLimit:
+                        #todo: fixme
                         self.msgAdd('Emergency shutdown: Too many bad remote commands')
+                        
                         if shutdownActivated == False:
                             AFroutines.emergency()
                             
                     continue
             elif eventType == 'reloadConfig':
                 fileconfig.loadConfig()     
+                eventQueue.put(('Log','Configreload forced'))  #debugmode
                 
             elif eventType == 'newListener':
                 port = int(event[1])
                 s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-                eventQueue.put(('Log','Server attempting to connect to port %s'%port))  #debugmode
+                eventQueue.put(('Log','Lockwatcher connected to new configuration client'))
                 try:
                     s.connect( ('127.0.0.1', port) )
                 except: 
@@ -913,10 +932,10 @@ class lockwatcher(threading.Thread):
         
                 
 monitorThread = None
-def createLockwatcher(statuses=None,msgAddFunc=None):
+def createLockwatcher():
     global monitorThread
         
-    monitorThread = lockwatcher(statuses,msgAddFunc)
+    monitorThread = lockwatcher()
     
     
 import win32serviceutil
