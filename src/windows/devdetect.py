@@ -1032,4 +1032,3 @@ def installService(install=True):
             win32serviceutil.InstallService(serviceClassString, serviceName, serviceDisplayName, 
                                             startType=win32service.SERVICE_DEMAND_START,  
                                             exeName='pythonservice.exe', description='Monitors for possible tampering and reacts accordingly')
-        

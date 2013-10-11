@@ -3,7 +3,7 @@
 @author: Nia Catlin
 
 '''
-import wmi 
+import wmi, win32serviceutil
 import pywin
 import socket, subprocess
 import re, os, time
@@ -102,7 +102,6 @@ class updateListenThread(threading.Thread):
         self.conn = None
         self.listening = False
         self.listenPort = None
-        
         
         port = 22195
         attempts = 0
@@ -446,16 +445,23 @@ class MainWindow(Frame):
             for triggerName,trigger in self.threadStatus.items():
                 self.statusChange(triggerName, trigger)
         else:
-            if status  != []:
+            if status  != None:
                 self.sStatusText.set("The Lockwatcher service is not running")
             else:
                 try:
+                    print('installingservice')
                     devdetect.installService(True)
+                    print('installdone')
                 except:
+                    print('installingfailed')
                     self.sStatusText.set("The Lockwatcher service is not registered with Windows.\nRun this program in administrator mode to register it.")
-                time.sleep(1)
-                self.settingFrame.destroy()
-                self.createStatusPanel(self.settingFrame)
+                    return
+                
+                win32serviceutil.StartService('LockWatcherSvc')
+                while lwServiceStatus() != 'Running':
+                    print(lwServiceStatus())
+                    time.sleep(1)
+                self.draw_selected_panel(self.windowFrame) 
                 
             
     
