@@ -9,8 +9,8 @@ setup(
     description = "An anti-tampering monitor",
     executables = [Executable("lockwatcher-gui.py", base = "Win32GUI")],
     data_files=[('', ['favicon.ico']),
-                ('', ['btscanner.exe','chastrigger.exe','roomtrigger.exe','interception-install.exe']),
+                ('', ['btscanner.exe','chastrigger.exe','roomtrigger.exe','install-interception.exe']),
                 ('', ['roomcam.png','chascam.png','camid.png']),
                 ('', ['cygwin1.dll','interception.dll'])
-                ]
-      )
+                ],
+    )

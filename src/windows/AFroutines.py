@@ -14,7 +14,6 @@ def standardShutdown():
     subprocess.call([shutdownPath,"-s"])
     
 def emergency():
-    print("running AF routines")
     #if not locked
     if hardwareconfig.checkLock()==False:
         lockScreen()
@@ -35,4 +34,3 @@ def emergency():
     #shutdown: force application close, no timeout
     shutdownPath = 'shutdown.exe' #maybe better to find+use full path
     subprocess.call([shutdownPath,"-s","-t","00","-f"])
-    print('calling shutdown...')

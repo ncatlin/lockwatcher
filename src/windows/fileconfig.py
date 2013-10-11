@@ -9,7 +9,7 @@ TRIG_LOCKED = 0
 TRIG_ALWAYS = 1
 TRIG_NEVER = 2
 
-CONFIG_FILE = 'lockwatcher.ini'
+CONFIG_FILE = 'C:\\Users\\UserX\\workspace\\workspace3\\lockwatchwin\\lockwatcher.ini'
 
 def writeConfig():
     with open(CONFIG_FILE, 'w') as configfile:
@@ -95,42 +95,47 @@ def trigStateChange(combo):
     config['TRIGGERS']['alwaystriggers'] = str(ALWAYS).strip("[]").replace("'","").replace(" ","")
     writeConfig()
 
-if not os.path.exists(CONFIG_FILE):
-    config = configparser.ConfigParser()
-    config.add_section('TRIGGERS')
-    trig = config['TRIGGERS']
-    trig['bluetooth_device_id']=''
-    trig['kbd_kill_combo_1']=''
-    trig['kbd_kill_combo_2']=''
-    trig['low_temp']='21'
-    trig['lockedtriggers']='E_DEVICE,E_NETCABLE,E_CHASSIS_MOTION,E_ROOM_MOTION,E_NET_CABLE_IN,E_NET_CABLE_OUT,E_KILL_SWITCH_2'
-    trig['alwaystriggers']='E_KILL_SWITCH_1'
-    trig['dismount_tc']='False'
-    trig['exec_shellscript']='False'
-    trig['adapterconguids']=''
-    trig['adapterdisconguids']=''
-    trig['ballistix_log_file']=''
-    trig['tc_path']=''
-    trig['ispy_path']=''
-    trig['room_cam_id']=''
-    trig['logfile']=''
-    trig['immediatestart']='False'
-    
-    config.add_section('EMAIL')
-    email = config['EMAIL']
-    
-    email['email_alert']='False'
-    email['email_imap_host']='imap.changeme.domain'
-    email['email_smtp_host']='smtp.changeme.domain'
-    email['email_username']='changeme'
-    email['email_password']='changeme'
-    email['email_secret']='changeme'
-    email['bad_command_limit']='3'
-    email['enable_remote']='False'
-    email['email_motion_picture']='False'
-    email['alert_email_address']='changeme@mail.domain'
-    email['command_email_address']='yourpc@mail.domain'
-    writeConfig()
-else:    
-    config = configparser.ConfigParser()
-    config.read(CONFIG_FILE)
+def loadConfig():
+    if not os.path.exists(CONFIG_FILE):
+        config = configparser.ConfigParser()
+        config.add_section('TRIGGERS')
+        trig = config['TRIGGERS']
+        trig['bluetooth_device_id']=''
+        trig['kbd_kill_combo_1']=''
+        trig['kbd_kill_combo_2']=''
+        trig['low_temp']='21'
+        trig['lockedtriggers']='E_DEVICE,E_NETCABLE,E_CHASSIS_MOTION,E_ROOM_MOTION,E_NET_CABLE_IN,E_NET_CABLE_OUT,E_KILL_SWITCH_2'
+        trig['alwaystriggers']='E_KILL_SWITCH_1'
+        trig['dismount_tc']='False'
+        trig['exec_shellscript']='False'
+        trig['adapterconguids']=''
+        trig['adapterdisconguids']=''
+        trig['ballistix_log_file']=''
+        trig['tc_path']=''
+        trig['ispy_path']=''
+        trig['room_cam_id']=''
+        trig['logfile']=''
+        trig['immediatestart']='False'
+        
+        config.add_section('EMAIL')
+        email = config['EMAIL']
+        
+        email['email_alert']='False'
+        email['email_imap_host']='imap.changeme.domain'
+        email['email_smtp_host']='smtp.changeme.domain'
+        email['email_username']='changeme'
+        email['email_password']='changeme'
+        email['email_secret']='changeme'
+        email['bad_command_limit']='3'
+        email['enable_remote']='False'
+        email['email_motion_picture']='False'
+        email['alert_email_address']='changeme@mail.domain'
+        email['command_email_address']='yourpc@mail.domain'
+        writeConfig()
+    else:    
+        config = configparser.ConfigParser()
+        config.read(CONFIG_FILE)
+        
+    return config
+
+config = loadConfig()
