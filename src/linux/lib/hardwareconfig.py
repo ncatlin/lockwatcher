@@ -3,9 +3,10 @@
 
 Various hardware and system state interrogation routines
 '''
-import subprocess,threading,socket,os,time,multiprocessing
+import subprocess,threading,socket,os,time
 import smtplib, sensors
 import fileconfig
+import imapclient
 
 #gets the /dev/videoX strings and device/manufacturer names for all the cameras
 #returns them in a dict
@@ -16,7 +17,6 @@ def getCamNames():
         cameranames[dev] = {}
         scanprocess = subprocess.Popen(['/sbin/udevadm','info', '--query=property','-n','%s'%dev], stdout=subprocess.PIPE)
         if scanprocess == []:
-            print("bad process?")
             return None
         try:
             out, err = scanprocess.communicate(timeout=30)
@@ -50,8 +50,8 @@ lockQueue = None
 def scrnLocked(state):
     s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
     s.connect(('127.0.0.1',22190))
-    if state == 1:s.send(b'True')
-    else: s.send(b'False')
+    if state == 1:s.send(b'LockTrue')
+    else: s.send(b'LockFalse')
 
 '''
 #cannot interact with user screen as root,
@@ -163,59 +163,6 @@ class temperatureMonitor(threading.Thread):
     def terminate(self):
         self.die = True
 
-numNames = {'zero':'0','one':'1','two':'2','three':'3','four':'4','five':'5','six':'6','seven':'7','eight':'8','nine':'9'}      
-import struct, re,sys
-#passes keystrokes from (eventFile device) to the callback function 
-class kbdListenThread(threading.Thread):
-    def __init__(self,callback,device):
-        threading.Thread.__init__(self,) 
-        self.callback = callback
-        self.event = device
-        self.name = 'kbdListenThread'
-    def run(self):
-        self.listening = True
-        try:
-            dev = open(self.event,'rb')
-        except IOError as e:
-            print("Cannot monitor keyboard: %s"%e)
-            return
-        
-        
-        KCodes = {} 
-        try:
-            outp = subprocess.check_output(["/bin/dumpkeys", "--keys-only"]).decode('UTF-8')
-        except:
-            e = sys.exc_info()[0]
-            print('Could not get keyboard symbols from /bin/dumpkeys:',e)
-            outp = ''
-            
-        #generate symbols table
-        for line in outp.split('\n'):
-            reg = re.search('^keycode\s*(\S*)\s*=\s*(\S*)[\S\s]*',line)
-            if reg != None:
-                hexCode = int(hex(int(reg.group(1))),16)
-                symbol = reg.group(2).strip('+')
-                if symbol in numNames.keys():
-                    symbol = numNames[symbol]
-                
-                KCodes[hexCode] = symbol
-        
-        keyEventFormat = 'llHHI'
-        keyEventSize = struct.calcsize(keyEventFormat)
-        
-        while self.listening == True:
-            event = dev.read(keyEventSize)
-            (time1, time2, eType, kCode, pressed) = struct.unpack(keyEventFormat, event)
-            if eType != 1: continue #not key down
-            if pressed == 1:
-                if kCode in KCodes.keys():
-                    keyname = KCodes[kCode]
-                else: keyname = 0
-                print(kCode)
-                self.callback(kCode,keyname)
-        return None
-    def terminate(self):
-        self.listening = False
 
 
 class BTTestThread(threading.Thread):
@@ -334,8 +281,7 @@ class RAMMonitor(threading.Thread):
     def terminate(self):
         self.die = True
             
-#tries to connect to the email hosts listed with the given credentials    
-import imapclient
+#tries to connect to the email servers listed with the given credentials    
 class emailTestThread(threading.Thread):
     def __init__(self,callback,config):
         threading.Thread.__init__(self) 

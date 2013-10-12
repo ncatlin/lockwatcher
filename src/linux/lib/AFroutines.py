@@ -71,7 +71,7 @@ LOGFILE = None
 
 #destroy data, deny access, poweroff
 #takes as arguments a message for the logfile and the status of the screen lock
-def emergency(eventReason,device=None):
+def emergency(device=None):
     #device change events fire quite rapidly 
     #pnly need to call this once
     global shuttingDown
@@ -79,7 +79,7 @@ def emergency(eventReason,device=None):
     else: shuttingDown = True
     
     #encase everything in a try->except>pass block
-    #so if anything fails we just poweroff
+    #so if anything fails we skip straight to poweroff
     
     try: 
     
@@ -99,11 +99,10 @@ def emergency(eventReason,device=None):
         unmountEncrypted() 
         
         if config['TRIGGERS']['exec_shellscript'] == 'True':
-            dmr = subprocess.Popen(".\sd.sh", shell=True, timeout=config['TRIGGERS']['script_timeout'])
-            dmr.wait()
+            scriptProcess = subprocess.Popen(".\sd.sh", shell=True, timeout=config['TRIGGERS']['script_timeout'])
+            scriptProcess.wait()
     except:
         pass
     
-    print("initiating poweroff!")
-    #os.system('/sbin/poweroff -f')
+    os.system('/sbin/poweroff -f')
     
