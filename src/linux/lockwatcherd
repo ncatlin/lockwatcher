@@ -22,21 +22,20 @@ if cmd_subfolder not in sys.path:
 import multiprocessing
 import threading, queue, struct
 import subprocess,time
-import dbus, signal, socket
+import dbus, socket
 import pyudev, sensors #bastien leonards pysensors 
-import imapclient, sendemail
-from sendemail import sendEmail,validHMAC
+import imapclient
 import syslog, datetime
 
 from gi.repository import GObject
 from pwd import getpwnam
-import dbus
 from dbus.mainloop.glib import DBusGMainLoop
 
-import fileconfig, AFroutines, hardwareconfig
-from fileconfig import config
-
-from daemon import daemon
+from lockwatcher import sendemail
+from lockwatcher import hardwareconfig
+from lockwatcher import AFroutines
+from lockwatcher import fileconfig
+from lockwatcher import daemon
 
 DAEMONPORT = int(fileconfig.config['TRIGGERS']['daemonport'])
 
@@ -58,70 +57,117 @@ def device_changed(action,device):
 
 
 #------------------------------------------------------------------
-lockQueue = None
-def scrnLocked(state):
-    s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
-    s.connect(('127.0.0.1',DAEMONPORT))
-    if state == 1:s.send(b'True')
-    else: s.send(b'False')
-
-#cannot interact with user screen as root,
-#make new process to do it
-def lockMonitorProcess(uid,q):
-        if os.getuid()==0:
-            os.setuid(uid)
-
-        #this isnt great, there are a few different lock implementations floating around
-        #lubuntu switching from xscreensaver-command to lightdm from locking next release
-        if fileconfig.DBUSSUPPORTED == True:
-            session_bus = dbus.SessionBus(mainloop=DBusGMainLoop())
-            #subscribe to kde and gnome lock notification signals
-            session_bus.add_signal_receiver(scrnLocked,'ActiveChanged','org.freedesktop.ScreenSaver')
-            session_bus.add_signal_receiver(scrnLocked,'ActiveChanged','org.gnome.ScreenSaver')
-            GObject.MainLoop().run()
+'''
+there used to be a nice dbus monitoring thing here, but it didn't play
+nicely with the root privs of our daemon
+now we have this 'look for xxx process appearing' horrible thing which 
+will need to be tweaked for every single different system in the universe
+'''
+    
+#gets the exe,arguments of the process 
+def getExeCmd(pid):
+    cmdPath = '/proc/%s/cmdline'%str(pid)
+    try:
+        fd = open(cmdPath)
+        contents = fd.read()
+        fd.close()
+    except:
+        return None
+    if len(contents) == 0: return None
+    
+    return contents.split('\x00')
+    
+#may have to check args to some of these processes
+lockProgramList = ['kscreenlocker','kscreenlocker_greet','xscreensaver-command','gnome-screensaver','xlock']
+class lockMonitor(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self.name = "lockMonThread"
+        
+        #detect initial lock state by looking for lock processes
+        for process in os.listdir('/proc'):
+            try:
+                pid = int(process)
+            except: continue
+            cmd = getExeCmd(pid)
+            if cmd == None: continue
+            if cmd[0] in lockProgramList:
+                hardwareconfig.lockState = True
+                break
         else:
-            if fileconfig.config['TRIGGERS']['DESKTOP_ENV'] == 'LXDE':
-                try:
-                    currentState = ('locked' in str(subprocess.check_output(["/usr/bin/xscreensaver-command", "-time"])))
-                except subprocess.CalledProcessError:
-                    eventQueue.put(('log',"Screen status not set - lock screen once before running lockwatcher"))
-                    currentState = False
-                    
-                while True:
-                    time.sleep(1)
-                    
+            hardwareconfig.lockState = False
+            
+    def run(self):
+        self.running = True
+        lockState = hardwareconfig.checkLock() 
+        
+        
+        while self.running == True:
+            numDirs = os.stat('/proc')[3]
+            procList = os.listdir('/proc')
+            while lockState == False:
+                if self.running == False: break
+                #not too worried about this
+                #timeit.timeit('os.stat("/proc")[3]',setup='import os')
+                newNumDirs = os.stat('/proc')[3]
+                if  newNumDirs == numDirs: 
+                    time.sleep(0.5)
+                    continue
+                
+                #the rest is probably a lot slower, but at the rate 
+                #processes stop/start it shoudln't matter
+                #a DoS based on mass process creation/termination may be considered though
+                numDirs = newNumDirs
+                newProcList = os.listdir('/proc')
+                newFiles = list(set(newProcList) - set(procList))
+                
+                for file in newFiles:
                     try:
-                        outp = subprocess.check_output(["/usr/bin/xscreensaver-command", "-time"])
-                    except subprocess.CalledProcessError:
-                        continue
+                        pid = int(file)
+                    except:
+                        continue #not a pid
                     
-                    if 'locked' in str(outp):
-                        if currentState == False:
-                            currentState = True
-                            scrnLocked(1)
+                    cmdLine = getExeCmd(pid)
+                    if cmdLine == None: continue
+                    
+                    procName = cmdLine[0].rpartition('/')[2]
+                    print('process name: ',procName)
+                    if procName not in lockProgramList:
+                        continue
                     else:
-                        if currentState == True:
-                            currentState = False
-                            scrnLocked(0)  
+                        lockState = True
+                        hardwareconfig.lockState = True
+                        break
+                else:
+                    procList = newProcList
+                    
+            if self.running == False: break
+                    
+            while lockState == True:
+                try:
+                    os.kill(pid,0)
+                    time.sleep(0.5)
+                    if self.running == False: break
+                    continue
+                except:
+                    lockState = False
+                    hardwareconfig.lockState = False
+             
+    def stop(self):
+        self.running = False
+        
                             
 #-------------------------------------------------------------------------------
                          
 monitoringRoom = False
 class IPCMonitor(threading.Thread):
-    def __init__(self,user):
+    def __init__(self):
         threading.Thread.__init__(self)
         self.name = "IPCMonThread"
-        self.user = user
         self.listenSocket = None
         self.lockProcess = None
         
     def run(self):
-        #start lock monitor process
-        lockQueue = multiprocessing.Queue()
-        p = multiprocessing.Process(target=lockMonitorProcess,args=(self.user,lockQueue))
-        p.daemon = True
-        p.start()
-        self.lockProcess = p
         try:
             self.listenSocket = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
             self.listenSocket.bind(('127.0.0.1',DAEMONPORT))
@@ -155,11 +201,7 @@ class IPCMonitor(threading.Thread):
                 command,value = command.split(':')
             else: value = None
             
-            if command == 'LockTrue': 
-                eventQueue.put(('lock',True))
-            elif command == 'LockFalse': 
-                eventQueue.put(('lock',False))
-            elif command == 'newListener' and value != None:
+            if command == 'newListener' and value != None:
                 eventQueue.put(('newListener',value))
             elif command == 'getStatuses':
                 eventQueue.put(('getStatuses',None))
@@ -175,8 +217,8 @@ class IPCMonitor(threading.Thread):
                 
         eventQueue.put(('status','ipc','Not Running'))
                 
+                
     def stop(self):
-        self.lockProcess.terminate()
         self.running = False
         try:
             self.listenSocket.shutdown(socket.SHUT_RD)
@@ -373,7 +415,8 @@ class bluetoothMon(threading.Thread):
             self.s.close()
             self.s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
             self.s.settimeout(600)
-            self.s.connect((config['TRIGGERS']['BLUETOOTH_DEVICE_ID'],2)) #make this port configurable?
+            #make the port configurable?
+            self.s.connect((fileconfig.config['TRIGGERS']['BLUETOOTH_DEVICE_ID'],2)) 
             
         eventQueue.put(('status','bluetooth',"Not running"))   
          
@@ -381,7 +424,7 @@ class bluetoothMon(threading.Thread):
         self.running = False
         self.s.close()
 
-def setupIMAP():
+def setupIMAP(config):
     server = imapclient.IMAPClient(config['EMAIL']['EMAIL_IMAP_HOST'], use_uid=False, ssl=True)
     server.login(config['EMAIL']['EMAIL_USERNAME'], fileconfig.config['EMAIL']['EMAIL_PASSWORD'])
     server.select_folder('INBOX')
@@ -398,7 +441,7 @@ class emailMonitor(threading.Thread):
         eventQueue.put(('status','email',"Connecting to server..."))
         
         try:
-            server = setupIMAP()
+            server = setupIMAP(fileconfig.config)
         except socket.gaierror:
             eventQueue.put(('log',"Error: Could not connect to mail IMAP server, will not listen for remote commands"))
             eventQueue.put(("Status",'email',"Error: IMAP Connection Failed")) 
@@ -501,7 +544,7 @@ class keyboardMonitor(threading.Thread):
         while self.running == True:
             watchKeys = []
             triggerKeys1 = {}
-            if 'E_KILL_SWITCH_1' in fileconfig.getActiveTriggers(config):
+            if 'E_KILL_SWITCH_1' in fileconfig.getActiveTriggers():
                 triggerCombo = fileconfig.config['TRIGGERS']['kbd_kill_combo_1'].split('+')
                 watchKeys.extend(triggerCombo)
                 if len(triggerCombo) == 0: 
@@ -511,7 +554,7 @@ class keyboardMonitor(threading.Thread):
                         triggerKeys1[key] = False    
                             
             triggerKeys2 = {}   
-            if 'E_KILL_SWITCH_2' in fileconfig.getActiveTriggers(config):
+            if 'E_KILL_SWITCH_2' in fileconfig.getActiveTriggers():
                 triggerCombo = fileconfig.config['TRIGGERS']['kbd_kill_combo_2'].split('+')
                 watchKeys.extend(triggerCombo)
                 if len(triggerCombo) == 0: 
@@ -647,36 +690,37 @@ REMOTE_KILLSWITCH = 5
 commandList = range(REMOTE_LOCK,REMOTE_KILLSWITCH+1)
 
 def executeRemoteCommand(command,threadDict):
+    config = fileconfig.config
     if command == REMOTE_LOCK:
         if hardwareconfig.checkLock() == False:
             AFroutines.lockScreen()
-            sendEmail("Command successful","Screen locked")
+            sendemail.sendEmail("Command successful","Screen locked",config)
             eventQueue.put(('log','Locking screen from remote command'))
         else:
-            sendEmail("Command failed","Screen was already locked")
+            sendemail.sendEmail("Command failed","Screen was already locked",config)
             eventQueue.put(('log','Lock screen failed - command received while locked'))
         
     elif command == REMOTE_STARTMONITOR:
         if threadDict['roomCamera'] == None:
             eventQueue.put(('startMonitor','room_camera'))
-            sendEmail("Command successful","Movement monitoring initiated. Have a nice day.")
+            sendemail.sendEmail("Command successful","Movement monitoring initiated. Have a nice day.",config)
             eventQueue.put(('log',"Movement monitoring initiated after remote command"))
         else:
-            sendEmail("Command failed","Movement monitoring already active.")
+            sendemail.sendEmail("Command failed","Movement monitoring already active.",config)
             eventQueue.put(('log',"Remote movement monitoring activation failed: already active"))
             
     elif command == REMOTE_STOPMONITOR:
         if monitoringRoom == True:
             monitoringRoom = False
             eventQueue.put(('stopMonitor','room_camera'))
-            sendEmail("Command successful","Movement monitoring disabled. Welcome home!")
+            sendemail.sendEmail("Command successful","Movement monitoring disabled. Welcome home!",config)
             eventQueue.put(('log',"Movement monitoring disabled after remote command"))
         else:
-            sendEmail("Command failed","Movement monitoring was not active.")
+            sendemail.sendEmail("Command failed","Movement monitoring was not active.",config)
             eventQueue.put(('log',"Remote movement monitoring deactivation failed: not active"))
             
     elif command == REMOTE_SHUTDOWN:
-        sendEmail("Command successful","Shutting down...")
+        sendemail.sendEmail("Command successful","Shutting down...",config)
         addLogEntry("Standard shutdown due to remote command")
         AFroutines.standardShutdown()
         
@@ -686,19 +730,14 @@ def executeRemoteCommand(command,threadDict):
 
 def startMonitor(threadDict,monitor):
     if monitor == 'ipc':
-        #the dbus interface we use to catch and send lock signals
-        #requires we run as that users UID, so we save it here
-        #todo: may not get uid as daemon?
-        if (os.getenv("SUDO_USER")) != None:
-            suUser = getpwnam(os.getenv("SUDO_USER")).pw_uid
-            AFroutines.screenOwner = suUser
-        else: 
-            suUser = None
-            AFroutines.screenOwner = os.getuid()
-            
-        #monitor socket for lock and netadapter events
-        threadDict['ipc'] = IPCMonitor(suUser)
+        #monitor socket for config program connections
+        threadDict['ipc'] = IPCMonitor()
         threadDict['ipc'].start()
+        return True
+    
+    elif monitor == 'lockMon':
+        threadDict['lockMon'] = lockMonitor()
+        threadDict['lockMon'].start()
         return True
     
     elif monitor == 'killSwitch':
@@ -831,15 +870,19 @@ class lockwatcher(threading.Thread):
         threading.Thread.__init__(self)
         self.name = 'Lockwatcher'
     def run(self):
-        eventQueue.put(('log','Starting lockwatcher'))
+        addLogEntry('Initialising lockwatcher')
         global monitoringRoom
         
         listeners = []
         threadDict= {}
         threadStatuses = {}
         startMonitor(threadDict,'ipc')
-        
-        activeTriggers = fileconfig.getActiveTriggers(config)
+        try:
+            startMonitor(threadDict,'lockMon')
+        except:
+            addLogEntry('excep fatal:'+str(sys.exc_info()))
+            return
+        activeTriggers = fileconfig.getActiveTriggers()
         #monitor for the keyboard killswitch command
         if 'E_KILL_SWITCH_1' in activeTriggers or 'E_KILL_SWITCH_2' in activeTriggers:
             startMonitor(threadDict,'killSwitch')
@@ -849,7 +892,7 @@ class lockwatcher(threading.Thread):
             
         if 'E_BLUETOOTH 'in activeTriggers:
             startMonitor(threadDict,'bluetooth')
-        
+
         badCommands = 0
         if fileconfig.config['EMAIL']['enable_remote']=='True':
             startMonitor(threadDict,'email')
@@ -866,7 +909,7 @@ class lockwatcher(threading.Thread):
         if 'E_INTRUSION' in fileconfig.config['TRIGGERS']['alwaystriggers']: 
             startMonitor(threadDict,'intrusion') 
         '''
-            
+
         logPath = fileconfig.config['TRIGGERS']['logfile']
         if os.path.exists(logPath):
             creationTime = time.ctime(os.path.getctime(logPath))
@@ -902,7 +945,8 @@ class lockwatcher(threading.Thread):
                             eventDetails[0] == 'Motion capture generated' and fileconfig.config['EMAIL']['EMAIL_MOTION_PICTURE'] == 'True':
                                     picPath = eventDetails[1]
                                     if os.path.exists(picPath):
-                                        emailResult = sendemail.sendEmail("Emergency shutdown + Image",str(eventDetails),attachment=picPath)
+                                        emailResult = sendemail.sendEmail("Emergency shutdown + Image",str(eventDetails),
+                                                                          fileconfig.config,attachment=picPath)
                                 
                         else:
                             emailResult = sendemail.sendEmail("Emergency shutdown",str(eventDetails))   
@@ -949,7 +993,9 @@ class lockwatcher(threading.Thread):
                     if thread == None: continue
                     if thread.is_alive(): 
                         thread.stop()
-                return    
+                addLogEntry('Local stop command received')
+                broadcast(listeners,'Shutdown')
+                return
             
             #--------------new mail in imap inbox addressed to us
             elif eventType == 'mail': 
@@ -972,13 +1018,14 @@ class lockwatcher(threading.Thread):
                     except:
                         continue
                     
-                if validMail == True and sendemail.validHMAC(code,command) == True:
+                secret = fileconfig.config['EMAIL']['email_secret']
+                if validMail == True and sendemail.validHMAC(code,command,secret) == True:
                     executeRemoteCommand(command) 
                     badCommands = 0 #good command resets limit
                 else:
                     badCommands += 1
                     sendemail.sendEmail("Command failed","Bad command or authentication code received: %s"%str(event[1]))
-                    eventQueue.put(('Log','Mail not authenticated or bad command: %s'%str(event[1])))
+                    eventQueue.put(('log','Mail not authenticated or bad command: %s'%str(event[1])))
                     badCommandLimit = int(fileconfig.config['EMAIL']['BAD_COMMAND_LIMIT'])
                     if badCommandLimit > 0 and badCommands >= badCommandLimit:
                         addLogEntry(str(event[1]),listeners)
@@ -1041,7 +1088,7 @@ class lockwatcher(threading.Thread):
 
 monitorThread = None
 
-class lockWatcherDaemon(daemon): 
+class lockWatcherDaemon(daemon.daemon): 
     lwThread = None
     def run(self):
         lwThread = lockwatcher()  
@@ -1058,23 +1105,23 @@ class lockWatcherDaemon(daemon):
 
 if __name__ == "__main__":
         if len(sys.argv) == 2:
-                if sys.argv[1] == 'console':
-                    pass
-                    #signal.signal(signal.SIGINT, kill_self)   
-                    #lockWatcher.run(lockWatcher)
  
-                daemon = lockWatcherDaemon('/var/run/lockwatcher.pid')
+                lwdaemon = lockWatcherDaemon('/var/run/lockwatcher.pid')
                 if 'start' == sys.argv[1]:
-                        daemon.start()
+                        if os.geteuid() != 0:
+                            print("Run this using sudo")
+                            exit()
+                        print('Starting lockwatcher...')
+                        lwdaemon.start()
                 elif 'stop' == sys.argv[1]:
-                        daemon.stop()
+                        lwdaemon.stop()
                 elif 'restart' == sys.argv[1]:
-                        daemon.restart()
+                        lwdaemon.restart()
                 else:
                         print( "Unknown command")
                         sys.exit(2)
                 sys.exit(0)
         else:
-                print( "usage: %s start|stop|restart|console" % sys.argv[0])
+                print( "usage: %s start|stop|restart" % sys.argv[0])
                 sys.exit(2)  
                        

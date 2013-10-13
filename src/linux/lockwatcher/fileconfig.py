@@ -3,13 +3,15 @@
 
 Various config file handling routines
 '''
-import configparser, os, re
+import configparser,re,pickle,os
+import sys,subprocess
 
 TRIG_LOCKED = 0
 TRIG_ALWAYS = 1
 TRIG_NEVER = 2
 
-CONFIG_FILE = 'lockwatcher.ini'
+CONFIG_FILE = '/etc/lockwatcher/lockwatcher.conf'
+config = None
 
 def writeConfig():
     with open(CONFIG_FILE, 'w') as configfile:
@@ -97,7 +99,7 @@ def isActive(trigger):
     else:
         return (False,False)
     
-def getActiveTriggers(config):
+def getActiveTriggers():
     lockedTriggers = config['TRIGGERS']['lockedtriggers'].split(',')
     alwaysTriggers = config['TRIGGERS']['alwaystriggers'].split(',')
     return lockedTriggers+alwaysTriggers   
@@ -122,10 +124,11 @@ def trigStateChange(combo):
     config['TRIGGERS']['alwaystriggers'] = str(ALWAYS).strip("[]").replace("'","").replace(" ","")
     writeConfig()
 
-import sys,subprocess, os
+
 #generate a keycode->keyname mapping
 def generateKCodeTable():
     try:
+        #needs root, sadly
         outp = subprocess.check_output(["/bin/dumpkeys", "--keys-only"]).decode('UTF-8')
     except:
         e = sys.exc_info()
@@ -149,7 +152,7 @@ def generateKCodeTable():
     return kCodeTable
 
 def loadConfig():
-    if not os.path.exists(CONFIG_FILE):
+    if not os.path.exists(CONFIG_FILE) or os.path.getsize(CONFIG_FILE)<30:
         config = configparser.ConfigParser()
         config.add_section('TRIGGERS')
         trig = config['TRIGGERS']
@@ -170,6 +173,7 @@ def loadConfig():
         trig['logfile']=''
         trig['immediatestart']='False'
         trig['daemonport']='22191'
+        trig['lockprogram']='None'
         
         config.add_section('CAMERAS')
         cameras = config['CAMERAS']
@@ -214,21 +218,57 @@ def reloadConfig():
     config = loadConfig()
 
 #generate a keyboard map if none exists
-import pickle
-if config['KEYBOARD']['MAP'] == 'None' and os.geteuid() == 0:
-    if os.path.exists('/etc/lockwatcher'):
-        mapfile = '/etc/lockwatcher/keymap'
-    else:
-        mapfile = os.getcwd()+'/keymap'
+if not os.path.exists('/etc/lockwatcher/keymap') and os.geteuid() == 0:
+    mapfile = '/etc/lockwatcher/keymap'
     
     kCodes = generateKCodeTable()
     if kCodes != False:
         pickle.dump( kCodes, open( mapfile, "wb" ))
         config['KEYBOARD']['MAP'] = mapfile
         writeConfig()
+
+def getLockProgram(deskEnv):
+
+    if deskEnv == 'ksmserver':
+        if os.path.exists('/usr/lib/kde4/libexec/kscreenlocker'):
+            return '/usr/lib/kde4/libexec/kscreenlocker --force'
+        elif os.path.exists('/usr/lib/kde4/libexec/kscreenlocker_greet'):
+            return '/usr/lib/kde4/libexec/kscreenlocker_greet'
+    else: 
+        print('no lock program found')
+        return 'None'
     
 
-DBUSSUPPORTED = True
-#review this code later
-ACTIVE = getActiveTriggers(config)
+#find the lock program to watch for/activate, as well as the user to activate it with
+sp = subprocess.Popen(['/usr/bin/pgrep','-xl', '"gnome-session|ksmserver|lxsession|mate-session|xfce4-session"'],stdout=subprocess.PIPE)
+out = sp.communicate()
+results = out[0].decode('UTF-8')
+if results == '':
+    print('No desktop environment detected, cannot monitor for lock changes')
+    DBUSSUPPORTED = False
+    DESK_UID = None
+else:
+    processes = results.split('\\n')
+    if len(processes) > 1 and processes[-1] == '':
+        del processes[-1]
+    
+    if len(processes) > 1:
+        '''multiple desktop environment running?
+        I don't know how to deal with that, I guess by running lock 
+        detection/response on all of them at once. 
+        todo it if it turns out to be needed'''
+        pass
+    
+    pid,deskenv = processes[0].split(' ')
+    for ln in open('/proc/%d/status' % int(pid)):
+        if ln.startswith('Uid:'):
+            DESK_UID = int(ln.split()[1])
+            break
+    
+    config['TRIGGERS']['lockprogram'] = getLockProgram(deskenv.strip())
+    writeConfig()
+            
+
+
+
 

@@ -4,36 +4,38 @@ Created on 1 Sep 2013
 @author: Nia Catlin
 '''
 
-import os, time,subprocess, multiprocessing
-import sendemail, fileconfig,hardwareconfig
-
-from fileconfig import config
+import os, subprocess, pwd
+from lockwatcher import fileconfig
+from lockwatcher import hardwareconfig
 
 dbusobj = None
 shuttingDown = False
 emailAlert = False
+   
+def demote(user_uid, user_gid):
+    def result():
+        os.setgid(user_gid)
+        os.setuid(user_uid)
+    return result
 
-screenOwner = None
 
 
-#also need a gnome version
-def lockProcess():
-    os.setuid(screenOwner)
-    if fileconfig['TRIGGERS']['DESKTOP_ENV'] == 'LXDE':
-        os.system('xscreensaver-command -lock')
-    else:
-        os.system('qdbus org.kde.screensaver /ScreenSaver Lock')
-        
-
-#x does not let root lock the screen
 #have to spawn a nonroot process to do it
 def lockScreen():
-    try:
-        P = multiprocessing.Process(target=lockProcess)
-        P.start()
-    except:
-        return False
-    return True
+    pw_record = pwd.getpwuid(fileconfig.DESK_UID)
+    user_name      = pw_record.pw_name
+    user_home_dir  = pw_record.pw_dir
+    user_uid       = pw_record.pw_uid
+    user_gid       = pw_record.pw_gid
+    env = os.environ.copy()
+    env[ 'HOME'     ]  = user_home_dir
+    env[ 'LOGNAME'  ]  = user_name
+    env[ 'USER'     ]  = user_name
+    
+    lockProgram = fileconfig.config['TRIGGERS']['lockprogram']
+    
+    subprocess.Popen(lockProgram, preexec_fn=demote(user_uid, user_gid), env=env)
+
 
 def standardShutdown():
     global shuttingDown
@@ -48,11 +50,11 @@ DMUSED = True
 #dismount encrypted containers    
 def unmountEncrypted():
     #doesnt seem to have purge or wipecache options on linux
-    if os.path.exists(config['TRIGGERS']['tc_path']):
+    if os.path.exists(fileconfig.config['TRIGGERS']['tc_path']):
         tc = subprocess.Popen("/usr/bin/truecrypt --dismount --force", shell=True, timeout=2)
         tc.wait()
     
-    if config['TRIGGERS']['dismount_dm'] == 'True':
+    if fileconfig.config['TRIGGERS']['dismount_dm'] == 'True':
         devlist = os.listdir('/dev/mapper')
         for dev in devlist:
             if 'crypt' in dev: #can parallelise this a bit
@@ -74,6 +76,8 @@ LOGFILE = None
 def emergency(device=None):
     #device change events fire quite rapidly 
     #pnly need to call this once
+    config = fileconfig.config
+    
     global shuttingDown
     if shuttingDown == True: return
     else: shuttingDown = True

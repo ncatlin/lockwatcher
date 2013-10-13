@@ -5,7 +5,6 @@ Various hardware and system state interrogation routines
 '''
 import subprocess,threading,socket,os,time
 import smtplib, sensors
-import fileconfig
 import imapclient
 
 #gets the /dev/videoX strings and device/manufacturer names for all the cameras
@@ -240,46 +239,6 @@ class BTScanThread(threading.Thread):
         return None
 
 
-#checks temperature.csv for updates
-class RAMMonitor(threading.Thread):
-    def __init__(self, callback):
-        threading.Thread.__init__(self)
-        self.callback = callback
-        self.die = False
-        self.name='ramMonitorThread'
-    def run(self):
-        lastTime = None
-        startup = True
-        while self.die == False:
-            if startup == False: time.sleep(1) #the MOD logger only writes once per second
-            else: startup = False
-            
-            try:
-                csvfile = open(fileconfig.config['TRIGGERS']['BALLISTIX_LOG_FILE'],mode='rb')
-                csvfile.seek(-30, 2)
-                line = csvfile.readline()
-                csvfile.close()
-            except IOError as e:
-                if e.errno == 2:
-                    self.callback("Unable to open log file")
-                    return
-                else:
-                    continue #probably locked by logger writing
-                    time.sleep(0.5)
-        
-            
-            
-            logDetail = line.decode("utf-8").split(',')
-            if len(logDetail) != 4 and len(logDetail) != 0: continue #empty or invalid
-            
-            logTime,RAMTemp =  (logDetail[0],logDetail[2])
-            if lastTime == None or logTime != lastTime:
-            #if RAMTemp <= fileconfig.config['TRIGGERS']['LOW_TEMP']:  
-                self.callback('('+logTime+'): '+RAMTemp+'C')
-                lastTime = logTime
-                
-    def terminate(self):
-        self.die = True
             
 #tries to connect to the email servers listed with the given credentials    
 class emailTestThread(threading.Thread):

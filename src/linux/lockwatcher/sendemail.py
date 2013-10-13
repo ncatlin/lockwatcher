@@ -3,18 +3,17 @@ Created on 5 Sep 2013
 
 @author: Nia Catlin
 '''
-import smtplib, time, syslog, sys
+import smtplib, time, sys
 import hashlib, hmac, os
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email import encoders
 
-from fileconfig import config#, printMessage
-
 #use a HMAC to prevent impersonation/replay
-secret = bytes(config['EMAIL']['email_secret'],'UTF-8')
-def validHMAC(code,command):
+
+def validHMAC(code,command, secretStr):
+            secret = bytes(secretStr,'UTF-8')
             timenow = time.strftime('%d%m%Y%H%M') #day,month,year,hour,minute
             validTimes = (str(int(timenow)-1),timenow,str(int(timenow)+1)) #1 minute leeway
             
@@ -32,7 +31,7 @@ def validHMAC(code,command):
             else:
                 return False
 
-def doSend(msg):
+def doSend(msg,config):
     try:
         s = smtplib.SMTP(config['EMAIL']['EMAIL_SMTP_HOST'])
         s.login(config['EMAIL']['EMAIL_USERNAME'], config['EMAIL']['EMAIL_PASSWORD'])
@@ -47,7 +46,7 @@ def doSend(msg):
         return "Unexpected error: %s"%sys.exc_info()[0]
     return True
         
-def sendEmail(subject,message,attachment=None):
+def sendEmail(subject,message,config,attachment=None):
 
     if attachment == None:
         msg = MIMEText(message)
@@ -64,7 +63,7 @@ def sendEmail(subject,message,attachment=None):
     msg['From'] = config['EMAIL']['COMMAND_EMAIL_ADDRESS']
     msg['To'] = config['EMAIL']['ALERT_EMAIL_ADDRESS']
     
-    result = doSend(msg)
+    result = doSend(msg,config)
     return result
     
         

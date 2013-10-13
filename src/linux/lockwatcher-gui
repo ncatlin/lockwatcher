@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 # -*- coding: iso-8859-15 -*-
 '''
 @author: Nia Catlin
@@ -11,18 +12,17 @@ cmd_folder = os.path.realpath(os.path.abspath(os.path.split(inspect.getfile( ins
 if cmd_folder not in sys.path:
     sys.path.insert(0, cmd_folder)
 
-cmd_subfolder = os.path.realpath(os.path.abspath(os.path.join(os.path.split(inspect.getfile( inspect.currentframe() ))[0],"lib")))
+cmd_subfolder = os.path.realpath(os.path.abspath(os.path.join(os.path.split(inspect.getfile( inspect.currentframe() ))[0],".")))
 if cmd_subfolder not in sys.path:
     sys.path.insert(0, cmd_subfolder)
-     
+  
 import socket, select
 import subprocess, threading
 import re, string, pickle, time, random
 
-import fileconfig
-import hardwareconfig
-import sendemail
-from tooltip import createToolTip
+from lockwatcher import hardwareconfig
+from lockwatcher import fileconfig
+from lockwatcher.tooltip import createToolTip
 
 from tkinter import *
 from tkinter import ttk
@@ -33,13 +33,13 @@ from PIL import Image
 VERBOSELOGS = False#True
 
 #runs the daemon as one of our threads so we can attach a debugger
-#import lockwatcher
-DEBUGMODE = False
-CREATELW = False
+#import lockwatcherd
+DEBUGMODE = False#True
+CREATELW = False#True
 if DEBUGMODE == True:
     if CREATELW == True:
-        lockwatcher.createLockwatcher()
-        lockwatcher.monitorThread.start()
+        lockwatcherd.createLockwatcher()
+        lockwatcherd.monitorThread.start()
         
 lwMonitorThread = None
 '''the lockwatcher daemon connects to this thread (after receiving 
@@ -144,6 +144,9 @@ class updateListenThread(threading.Thread):
                             
                     elif operation == 'Shutdown':
                         self.conn.close()
+                        self.listening = False
+                        timeStr = time.strftime('[%x %X] ')
+                        self.logCallback(timeStr+': Lockwatcher service shutdown',redrawStatus=True)
                         break
 
     def stop(self):
@@ -342,11 +345,14 @@ class MainWindow(Frame):
         self.sButtonText = StringVar()
         Label(parent,textvariable=self.sStatusText).pack(pady=5)
         
-        self.threadFrames = ttk.LabelFrame(parent,text='Trigger Monitors',relief=SUNKEN)
+        self.threadFrames = Frame(parent)
+        
+        self.triggerFrame = ttk.LabelFrame(self.threadFrames,text='Trigger Monitors',relief=SUNKEN)
+        self.triggerFrame.pack(fill=X,expand=YES,)
         boxWidth = 28
         
-        Label(self.threadFrames,text='Right click individual monitors to start/stop them').pack(pady=5)
-        Frame1 = Frame(self.threadFrames)
+        Label(self.triggerFrame,text='Right click individual monitors to start/stop them').pack(pady=5)
+        Frame1 = Frame(self.triggerFrame)
         
         BTFrame = ttk.LabelFrame(Frame1,text="Bluetooth Connection",name='bluetooth')
         BTFrame.pack(fill=X,expand=YES,side=LEFT,padx=5)
@@ -365,7 +371,7 @@ class MainWindow(Frame):
         self.sKSLabel = KSLabel
         Frame1.pack(fill=X,expand=YES,pady=4)
         
-        Frame2 = Frame(self.threadFrames)
+        Frame2 = Frame(self.triggerFrame)
         RAMFrame = ttk.LabelFrame(Frame2,text="RAM Temperature Drop",name='temperature')
         RAMFrame.pack(fill=X,expand=YES,side=LEFT, padx=5)
         RAMFrame.bind('<Button-3>',self.rClick,add='')
@@ -383,7 +389,7 @@ class MainWindow(Frame):
         self.sDevLabel = devLabel
         Frame2.pack(fill=X,expand=YES,pady=4)
         
-        Frame3 = Frame(self.threadFrames)
+        Frame3 = Frame(self.triggerFrame)
         cCamFrame = ttk.LabelFrame(Frame3,text="Chassis Movement",name='chassis_camera')
         cCamFrame.pack(fill=X,expand=YES,side=LEFT,padx=5)
         cCamFrame.bind('<Button-3>',self.rClick,add='')
@@ -401,7 +407,7 @@ class MainWindow(Frame):
         self.srCamLabel = cCamLabel
         Frame3.pack(fill=X,expand=YES,pady=4)
         
-        Frame4 = Frame(self.threadFrames)
+        Frame4 = Frame(self.triggerFrame)
         mailFrame = ttk.LabelFrame(Frame4,text="Email Commands",name='email')
         mailFrame.pack(fill=X,expand=YES,side=RIGHT,padx=5)
         mailFrame.bind('<Button-3>',self.rClick,add='')
@@ -419,7 +425,7 @@ class MainWindow(Frame):
         self.sNetLabel = NetLabel
         Frame4.pack(fill=X,expand=YES,pady=4)
         
-        IPCFrame = ttk.LabelFrame(parent,text="Lock monitor",name='ipc')
+        IPCFrame = ttk.LabelFrame(self.threadFrames,text="Lock monitor",name='ipc')
         IPCFrame.pack(padx=5)
         IPCFrame.bind('<Button-3>',self.rClick,add='')
         IPCLabel = Label(IPCFrame,textvariable=self.threadStatus['ipc'],width=boxWidth,name='ipc')
@@ -427,24 +433,9 @@ class MainWindow(Frame):
         IPCLabel.bind('<Button-3>',self.rClick,add='')
         self.sIPCLabel = IPCLabel
         
-        daemonRunning = True
-        if DEBUGMODE == True:
+        if lwMonitorThread.listening == True:
             daemonRunning = True
-        else:
-            #check daemon pid
-            PIDFILE = '/var/run/lockwatcher.pid'
-            
-            if os.path.exists(PIDFILE):
-                try:
-                    fd = open(PIDFILE,'r')
-                    pid = fd.readline()
-                    fd.close()
-                    os.kill(int(pid),0)
-                except:
-                    daemonRunning = False
-            else: 
-                daemonRunning = False
-
+        else: daemonRunning = False
         
         if daemonRunning == True:
             self.sStatusText.set("The lockwatcher daemon is running")
@@ -488,7 +479,6 @@ class MainWindow(Frame):
         
            
     def rClick(self,frame):
-        print('clicked ',frame.widget._name)
         commands=[
                ('Start', lambda frame=frame: self.optMonClicked(frame,'startMonitor')),
                ('Stop', lambda frame=frame: self.optMonClicked(frame,'stopMonitor'))
@@ -571,22 +561,32 @@ class MainWindow(Frame):
             #user probably destroyed label by changing tab, don't care  
             pass
     
-    pendingStatuses = []        
+    pendingStatuses = []    
+    pendingLogs = []    
     def newStatus(self,threadname,text): 
         self.pendingStatuses.append((threadname,text))
         
-    def processNewStatuses(self):
-        for update in self.pendingStatuses:
-            self.threadStatus[update[0]].set(update[1])
-        self.pendingStatuses = []
-        root.after(500,self.processNewStatuses)
-    
     def newLog(self,msg,redrawStatus=False): 
         if redrawStatus != False:
             self.doRedrawStatus.set(1)
-        try:
-            self.addMessage(msg)
-        except: pass
+            
+        self.pendingLogs.append(msg)   
+         
+    def processNewEvents(self):
+        for update in self.pendingStatuses:
+            self.threadStatus[update[0]].set(update[1])
+        self.pendingStatuses = []
+        
+        for msg in self.pendingLogs:
+            try:
+                self.addMessage(msg)
+            except: pass    
+        self.pendingLogs = []
+        
+        root.after(500,self.processNewEvents)
+    
+
+        
             
     def createBluetoothPanel(self,parent):
         Label(parent,text='Lockwatcher will establish a connection to this bluetooth device.\
@@ -1054,13 +1054,17 @@ class MainWindow(Frame):
         else: 
             if not os.path.exists(fileconfig.config['TRIGGERS']['keyboard_device']):
                 print('Keyboard device not found')
-            
-        if fileconfig.config['KEYBOARD']['MAP'] == 'None':
-            Label(parent,text='This program must be run as root once to retrieve keymappings from the kernel').pack(padx=5)
+        
+        keymapFile = '/etc/lockwatcher/keymap'
+        if not os.path.exists(keymapFile):
+            Label(parent,text='This program must be run once as root to retrieve keymappings from the kernel').pack(padx=5)
             return
         else:
             if self.kCodeMap == None:
-                mapfile = open(fileconfig.config['KEYBOARD']['MAP'],'rb')
+                try:
+                    mapfile = open(keymapFile,'rb')
+                except:
+                    print("Could not open ",keymapFile)
                 self.kCodeMap = pickle.load(mapfile)
         
         Label(parent,text='Setup a killswitch combination of one or more keys').pack(padx=5)
@@ -1570,25 +1574,34 @@ class MainWindow(Frame):
         sdScript = Text(sdFrame,width=65,height=20,bg='white')
         sdScript.pack(fill=BOTH,expand=YES,pady=5,padx=5)
         
-        if not os.path.exists('./sd.sh'):
+        scriptPath = '/etc/lockwatcher/sd.sh'
+        scriptExists = True
+        if not os.path.exists(scriptPath):
             try:
-                fd = open('./sd.sh','w')
-                fd.write('#shell script to execute on emergency shutdown')
+                fd = open(scriptPath,'w')
+                fd.write('#!/bin/sh\n')
                 fd.close()
             except:
-                addMessage('Failed to find or create shutdown batch file in lockwatcher directory')
-            
+                self.addMessage('Failed to create shutdown batch file in lockwatcher directory')
+                scriptExists = False
+
         try:
-            fd = open('./sd.sh','r')
+            fd = open(scriptPath,'r')
             battext = fd.read()
             fd.close()
         except:
-            battext = "Failed to open sd.bat"
+            battext = "Shutdown script not found"
             
         sdScript.insert(INSERT,battext)
         self.sdScript = sdScript
         
-        saveBtn = Button(sdFrame,text='Save Script',command=self.writeSDScript).pack()
+        if not os.access(scriptPath,os.W_OK):
+            sdScript.config(state='disabled')
+            Label(parent,text='This script will be executed with root privileges.\n'+
+                         'Run this program as root or edit /etc/lockwatcher/sd.sh to modify it').pack()
+            
+        else:
+            Button(sdFrame,text='Save Script',command=self.writeSDScript).pack()
         
     def writeSDScript(self):
         fd = open('sd.sh','w')
@@ -1605,11 +1618,11 @@ class MainWindow(Frame):
 app = MainWindow(master=root)
 app.config(background='white')
 root.after(2000,app.redrawStatus)
-root.after(500,app.processNewStatuses)
+root.after(500,app.processNewEvents)
 root.mainloop()
 
 if DEBUGMODE == True:
-    if lockwatcher.monitorThread != None and lockwatcher.monitorThread.is_alive():
+    if lockwatcherd.monitorThread != None and lockwatcherd.monitorThread.is_alive():
         sendToLockwatcher('stop')
     
 lwMonitorThread.stop()
