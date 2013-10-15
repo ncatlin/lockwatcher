@@ -3,7 +3,7 @@
 '''
 @author: Nia Catlin
 
-needs packages python3, python3-pyudev, lm-sensors, python3-tk, python3-imaging
+needs packages python3, python3-pyudev, python3-tk, python3-imaging
 module: imapclient
 '''
 import os, sys, inspect
@@ -46,7 +46,11 @@ if DEBUGMODE == True:
 lwMonitorThread = None
 root = Tk()
 '''the lockwatcher daemon connects to this thread (after receiving 
-a newListener request) to feed us updates and log events'''
+a newListener request) to feed us updates and log events
+
+todo: although this was developed to allow multiple config programs to be used concurrently,
+a config reload only affects the daemon and not other listeners. Fix by having lockwatcher
+echo reloadrequests to its listeners'''
 class updateListenThread(threading.Thread):
     def __init__(self,statusCallback,logCallback):
         threading.Thread.__init__(self) 
@@ -90,6 +94,7 @@ class updateListenThread(threading.Thread):
                 conn,addr = self.s.accept()
             except:
                 if self.running == True:
+                    time.sleep(4)
                     continue #waiting for lockwatcher service to start
                 else: break #window closed
             
@@ -170,7 +175,8 @@ OPT_LOGS = OPT_STATUS+1
 OPT_BT = OPT_LOGS+1
 OPT_MOTION = OPT_BT+1
 OPT_KBD = OPT_MOTION+1
-OPT_CHAS = OPT_KBD+1
+OPT_MOUSE = OPT_KBD+1
+OPT_CHAS = OPT_MOUSE+1
 OPT_NET = OPT_CHAS+1
 OPT_EMAIL = OPT_NET+1
 OPT_SHUT = OPT_EMAIL+1
@@ -180,10 +186,12 @@ optionCategories = {OPT_STATUS:'Status',
                     OPT_BT:'Bluetooth Triggers',
                     OPT_MOTION:'Motion Triggers',
                     OPT_KBD:'Keyboard Triggers',
+                    OPT_MOUSE:'Mouse Triggers',
                     OPT_CHAS:'Chassis Triggers',
                     OPT_NET:'Network Triggers',
                     OPT_EMAIL:'Email Settings',
                     OPT_SHUT:'Shutdown Actions'}
+                    
     
 icon = """R0lGODlhIAAgAMZ7AAAAAP8YDICAgIGBgYKCgoSEhIWFhYeHh4iIiIqKiouLi42Nj
 Y6OjpCQkJGRkZOTk5SUlJaWlpeXl5mZmZqampycnJ2dnZ+fn6CgoKKioqOjo6WlpaampqioqKmp
@@ -283,6 +291,8 @@ class MainWindow(Frame):
             self.createEMailPanel(self.settingFrame)
         elif label == optionCategories[OPT_SHUT]:
             self.createShutdownPanel(self.settingFrame)
+        elif label == optionCategories[OPT_MOUSE]:
+            self.createMousePanel(self.settingFrame)
     
     threadStatus = {
                 'ipc' : StringVar(),
@@ -293,52 +303,9 @@ class MainWindow(Frame):
                 'chassis_camera' : StringVar(),
                 'room_camera' : StringVar(),
                 'netadapters' : StringVar(),
+                'mouse' : StringVar(),
                 'email':StringVar()}
     
-    def createLogsPanel(self,parent):
-        logFileFrame = Frame(parent)
-        logFileFrame.pack(side=TOP,fill=X,expand=YES)
-        Label(logFileFrame,text='Logfile location:').pack(side=LEFT)
-        
-        logPath = StringVar()
-        logPath.set(fileconfig.config['TRIGGERS']['logfile'])
-        
-        logfileEntry = Entry(logFileFrame,textvariable=logPath,width=40)
-        logfileEntry.pack(side=LEFT,fill=X,expand=YES)
-        Button(logFileFrame,text='Select',command=self.chooseLogFile).pack(side=LEFT)
-        self.logPath = logPath
-        logPath.trace("w", lambda name, index, mode, logPath=logPath: self.newLogFile(self.logPath.get()))
-        
-        msgFrame = ttk.Labelframe(parent,text='Recent events:',relief=SUNKEN)
-        msgFrame.pack(expand=YES,fill=BOTH,padx=4,pady=4)
-        
-        scrollbar = Scrollbar(msgFrame)
-        scrollbar.pack(side=RIGHT, fill=Y)
-        
-        #todo: resize with window
-        messageListB = Text(msgFrame,width=60,height=21,yscrollcommand=scrollbar.set,wrap=WORD)
-        messageListB.pack(side=LEFT,expand=YES,fill=BOTH,padx=4,pady=4)
-        self.messageListB = messageListB
-        scrollbar.config(command=messageListB.yview)
-        
-        
-        if len(self.messageList) > 0:
-            for idx,msg in enumerate(self.messageList):
-                messageListB.insert(0.0,msg)
-        
-        messageListB.config(state=DISABLED)
-        
-    #todo: consolidate these for tc/log/mod
-    def chooseLogFile(self):
-        path = filedialog.asksaveasfilename(filetypes=[('txt files','.txt')])
-        if path != '':
-            if '.txt' not in path: path = path+'.txt'
-            self.logPath.set(path)
-            
-    def setFilePath(self,path):
-        fileconfig.config['TRIGGERS']['logfile'] = path
-        writeConfig()
-             
     def createStatusPanel(self,parent):
         self.drawingStatus = True
         self.sStatusText = StringVar()
@@ -425,8 +392,19 @@ class MainWindow(Frame):
         self.sNetLabel = NetLabel
         Frame4.pack(fill=X,expand=YES,pady=4)
         
+        
+        Frame5 = Frame(self.triggerFrame)
+        mouseFrame = ttk.LabelFrame(Frame5,text="Mouse Triggers",name='mouse')
+        mouseFrame.pack(padx=5)
+        mouseFrame.bind('<Button-3>',self.rClick,add='')
+        mouseLabel = Label(mouseFrame,textvariable=self.threadStatus['mouse'],width=boxWidth,name='mouse')
+        mouseLabel.pack()
+        mouseLabel.bind('<Button-3>',self.rClick,add='')
+        self.sMouseLabel = mouseLabel
+        Frame5.pack(fill=X,expand=YES,pady=4)
+        
         IPCFrame = ttk.LabelFrame(self.threadFrames,text="Lock monitor",name='ipc')
-        IPCFrame.pack(padx=5)
+        IPCFrame.pack(padx=5,pady=8)
         IPCLabel = Label(IPCFrame,textvariable=self.threadStatus['ipc'],width=boxWidth,name='ipc')
         IPCLabel.pack()
         self.sIPCLabel = IPCLabel
@@ -437,6 +415,16 @@ class MainWindow(Frame):
         
         if daemonRunning == True:
             self.sStatusText.set("The lockwatcher daemon is running")
+            
+            testMode = fileconfig.config['TRIGGERS']['test_mode']
+            self.testModeVar = StringVar()
+            if testMode == 'True': self.testModeVar.set('True')
+            else: self.testModeVar.set('False')
+            testModeCheck = Checkbutton(parent,text="Enable Test Mode", variable = self.testModeVar,
+                                        onval='True',offval='False',command=(lambda: self.changeCheckBox('TRIGGERS:test_mode',self.testModeVar)))
+            createToolTip(testModeCheck,'Instead of triggering a shutdown, lockwatcher will instead only log trigger activation')
+            testModeCheck.pack()
+            
 
             if self.firstRun == True:
                 self.setupMonitorStrings()
@@ -491,7 +479,53 @@ class MainWindow(Frame):
         
         monitor = widgetName
         
-        sendToLockwatcher('%s:%s'%(action,widgetName),fileconfig.config['TRIGGERS']['daemonport'])
+        sendToLockwatcher('%s:%s'%(action,widgetName),fileconfig.config['TRIGGERS']['daemonport'])    
+        
+    def createLogsPanel(self,parent):
+        logFileFrame = Frame(parent)
+        logFileFrame.pack(side=TOP,fill=X,expand=YES)
+        Label(logFileFrame,text='Logfile location:').pack(side=LEFT)
+        
+        logPath = StringVar()
+        logPath.set(fileconfig.config['TRIGGERS']['logfile'])
+        
+        logfileEntry = Entry(logFileFrame,textvariable=logPath,width=40)
+        logfileEntry.pack(side=LEFT,fill=X,expand=YES)
+        Button(logFileFrame,text='Select',command=self.chooseLogFile).pack(side=LEFT)
+        self.logPath = logPath
+        logPath.trace("w", lambda name, index, mode, logPath=logPath: self.newLogFile(self.logPath.get()))
+        
+        msgFrame = ttk.Labelframe(parent,text='Recent events:',relief=SUNKEN)
+        msgFrame.pack(expand=YES,fill=BOTH,padx=4,pady=4)
+        
+        scrollbar = Scrollbar(msgFrame)
+        scrollbar.pack(side=RIGHT, fill=Y)
+        
+        #todo: resize with window
+        messageListB = Text(msgFrame,width=60,height=21,yscrollcommand=scrollbar.set,wrap=WORD)
+        messageListB.pack(side=LEFT,expand=YES,fill=BOTH,padx=4,pady=4)
+        self.messageListB = messageListB
+        scrollbar.config(command=messageListB.yview)
+        
+        
+        if len(self.messageList) > 0:
+            for idx,msg in enumerate(self.messageList):
+                messageListB.insert(0.0,msg)
+        
+        messageListB.config(state=DISABLED)
+        
+        Label(parent,text='Due to their frequency, ignored keyboard and mouse events are not logged.\nUse test mode to test them.').pack()
+        
+    #todo: consolidate these for tc/log/mod
+    def chooseLogFile(self):
+        path = filedialog.asksaveasfilename(filetypes=[('txt files','.txt')])
+        if path != '':
+            if '.txt' not in path: path = path+'.txt'
+            self.logPath.set(path)
+            
+    def setFilePath(self,path):
+        fileconfig.config['TRIGGERS']['logfile'] = path
+        writeConfig() 
             
     #insert message into recent events window
     #(assumes that everything we get is already timestamped
@@ -553,6 +587,8 @@ class MainWindow(Frame):
                 self.sIPCLabel.config(fg=newColour)
             elif triggerName == 'netadapters':
                 self.sNetLabel.config(fg=newColour)
+            elif triggerName == 'mouse':
+                self.sMouseLabel.config(fg=newColour)
             else:
                 print('Unhandled trigger update: ',triggerName)     
         except:
@@ -566,8 +602,9 @@ class MainWindow(Frame):
         
     def newLog(self,msg,redrawStatus=False): 
         if redrawStatus != False:
-            self.doRedrawStatus.set(1)
-            
+            try:
+                self.doRedrawStatus.set(1)
+            except: return
         self.pendingLogs.append(msg)   
          
     def processNewEvents(self):
@@ -1212,6 +1249,40 @@ class MainWindow(Frame):
             text = text+'+'+keyStr    
         self.IMVar.set(text)
         self.recentKCodes.append(key)
+  
+    def createMousePanel(self,parent):
+        Label(parent,text='Setting either of these conditions to "anytime" is probably a bad idea',bg='red').pack()
+        
+        moveFrame = ttk.Labelframe(parent,text='Mouse Movement',relief=GROOVE)
+        moveFrame.pack(fill=X,side=TOP,padx=4,pady=4)
+        
+        Label(moveFrame,text='This trigger will activate when your mouse is moved').pack()
+        
+        triggerName = 'E_MOUSE_MV'
+        trigBox =  ttk.Combobox(moveFrame,values=lockStates,state='readonly',name=triggerName.lower())
+        if triggerName in fileconfig.config['TRIGGERS']['lockedtriggers'].split(','):
+            trigBox.current(0)
+        elif triggerName in fileconfig.config['TRIGGERS']['alwaystriggers'].split(','):
+            trigBox.current(1)
+        else: trigBox.current(2)
+        trigBox.pack(pady=5)
+        trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
+        
+        buttonFrame = ttk.Labelframe(parent,text='Mouse Buttons',relief=GROOVE)
+        buttonFrame.pack(fill=X,side=TOP,padx=4,pady=4)
+        
+        Label(buttonFrame,text='This trigger will activate when a button on your mouse is clicked\n (Only the middle three mouse buttons are supported)').pack()
+        
+        triggerName = 'E_MOUSE_BTN'
+        trigBox =  ttk.Combobox(buttonFrame,values=lockStates,state='readonly',name=triggerName.lower())
+        if triggerName in fileconfig.config['TRIGGERS']['lockedtriggers'].split(','):
+            trigBox.current(0)
+        elif triggerName in fileconfig.config['TRIGGERS']['alwaystriggers'].split(','):
+            trigBox.current(1)
+        else: trigBox.current(2)
+        trigBox.pack(pady=5)
+        trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
+        
   
     deviceList={}
     def createNetworkPanel(self,parent):

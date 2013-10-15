@@ -44,10 +44,14 @@ def eventHandle(event_type,eventReason):
 
     if (event_type in fileconfig.config['TRIGGERS']['ALWAYSTRIGGERS'].split(',')) or \
         (event_type in fileconfig.config['TRIGGERS']['LOCKEDTRIGGERS'].split(',') and locked == True):
-        eventQueue.put(("log","[%s - Trigger %s activated]: %s"%(lockedStateText[locked],event_type,eventReason)))
-        eventQueue.put(("kill",event_type,eventReason))
+        eventQueue.put(("log","[%s - Trigger %s ACTIVATED]: %s"%(lockedStateText[locked],event_type,eventReason)))
+        if fileconfig.config['TRIGGERS']['TEST_MODE'] == 'False':
+            eventQueue.put(("kill",event_type,eventReason))
+        else:
+            eventQueue.put(("log",'Shutdown cancelled - test mode active'))
     else:
-        eventQueue.put(("log","[%s - Trigger %s (ignored)]: %s"%(lockedStateText[locked],event_type,eventReason)))
+        if event_type not in ['E_KILL_SWITCH_1','E_KILL_SWITCH_2','E_MOUSE_MV','E_MOUSE_BTN']:
+            eventQueue.put(("log","[%s - Trigger %s (ignored)]: %s"%(lockedStateText[locked],event_type,eventReason)))
 
 #handler for pyudev device events
 def device_changed(action,device):
@@ -94,11 +98,12 @@ class lockMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.process = None
+        self.dbusProcess = None
         self.name = "lockMonThread"
         
         if fileconfig.DESK_UID != None:
-            p = multiprocessing.Process(target=lockMonitorProcess)
-            p.start()
+            self.dbusProcess = multiprocessing.Process(target=lockMonitorProcess)
+            self.dbusProcess.start()
         
         #detect initial lock state by looking for lock processes
         for process in os.listdir('/proc'):
@@ -208,6 +213,8 @@ class lockMonitor(threading.Thread):
         self.running = False
         if self.process != None:
             self.process.kill()
+        if self.dbusProcess != None:
+            self.dbusProcess.terminate()
         
                             
 #waits for events from config programs and the dbus monitor
@@ -664,15 +671,15 @@ class keyboardMonitor(threading.Thread):
             
             #wait for new input on keyboard device
             self.pollobject = select.poll()
-            self.pollobject.register(self.dev)
+            self.pollobject.register(self.dev,select.EPOLLIN)
             eventQueue.put(('status','killSwitch',"Active"))
             
             self.listening = True
             while self.listening == True:
-                result = self.pollobject.poll(1)
+                result = self.pollobject.poll(1000)
                 if self.listening == False: break
-                if result[0][1] != 5: continue 
-                
+                if result == []: continue
+
                 event = self.dev.read(keyEventSize)
                 (time1, time2, eType, kCode, pressed) = struct.unpack(keyEventFormat, event)
                 if eType != 1: continue #if not new key down
@@ -705,6 +712,89 @@ class keyboardMonitor(threading.Thread):
         self.running = False
         self.listening = False
         self.dev.close()
+
+#BUG: can't read side buttons
+#the event readings i am getting make no distinction between the
+#press of a side button and a very small mouse movement
+#probably hidden in the time values or something?
+class mouseMonitor(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self.name = "MouseMonThread"
+        self.pollobject = None
+        self.running = False
+        
+        self.miceDevices = []
+        for eventPath in hardwareconfig.getMouseDevices():
+            try:
+                self.miceDevices.append(open(eventPath,'rb'))
+            except:
+                continue
+        
+    def run(self):
+        if len(self.miceDevices) == 0:
+            eventQueue.put(('log',"Cannot monitor mouse: %s\n->Need to run as root"))
+            eventQueue.put(('status','mouse',"Error: Can't read mouse device"))
+            return
+        
+        intFDDict = {}
+        for dev in self.miceDevices:
+            intFDDict[dev.fileno()] = dev
+        
+        self.running = True
+
+        mouseEventFormat = 'llHHi'
+        mouseEventSize = struct.calcsize(mouseEventFormat)
+        
+        #wait for new input on keyboard device
+        pollobject = select.poll()
+        for mouse in self.miceDevices:
+            pollobject.register(mouse)
+        
+        eventQueue.put(('status','mouse',"Active"))
+        self.listening = True
+        lastTriggerTime = 0
+        while self.listening == True:
+            result = pollobject.poll(1000)
+            if result == []: continue
+            
+            readFDs = []
+            for fd,state in result:
+                if state == select.EPOLLOUT: continue #output only
+                else: readFDs.append(fd)
+            
+            if readFDs == []: continue
+            
+            eventTime = time.time()
+            for fd in readFDs:
+                try:
+                    event = intFDDict[fd].read(mouseEventSize)
+                except:
+                    if self.listening == False: 
+                        break
+                    
+                if eventTime <  lastTriggerTime+1: continue #read it all out, dont trigger constantly
+                (time1, time2, eType, kCode, value) = struct.unpack(mouseEventFormat, event)
+                if eType == 0: continue
+                if kCode in [8,272,273,274] or value < 0: #mouse 1,2,3 or scroll
+                    eventHandle('E_MOUSE_BTN',('Mouse button pressed'))
+                    lastTriggerTime = time.time()
+                    continue
+                
+                #wont trigger on tiny movement - considering adding a 
+                #'sensitive mode' which will also read side buttons
+                if value > 1: 
+                    eventHandle('E_MOUSE_MV',('Mouse moved'))
+                    lastTriggerTime = time.time()
+                    continue
+                            
+        eventQueue.put(('status','mouse',"Not Started")) 
+    
+    def stop(self):
+        self.running = False
+        self.listening = False
+        for fd in self.miceDevices:
+            fd.close()
 
 #monitor for motion with settings passed to thread
 class camera_monitor(threading.Thread):
@@ -841,6 +931,11 @@ def startMonitor(threadDict,monitor):
     elif monitor == 'killSwitch':
         threadDict['killSwitch'] = keyboardMonitor()
         threadDict['killSwitch'].start()
+        return True
+    
+    elif monitor == 'mouse':
+        threadDict['mouse'] = mouseMonitor()
+        threadDict['mouse'].start()
         return True
     
     elif monitor == 'chassis_camera':
@@ -1047,11 +1142,12 @@ class lockwatcher(threading.Thread):
         if 'E_INTRUSION' in fileconfig.config['TRIGGERS']['alwaystriggers']: 
             startMonitor(threadDict,'intrusion') 
         '''
-
+            
         logPath = fileconfig.config['TRIGGERS']['logfile']
         if os.path.exists(logPath):
             creationTime = time.ctime(os.path.getctime(logPath))
             creationMonth = datetime.datetime.strptime(creationTime, "%a %b %d %H:%M:%S %Y")
+            creationMonth = "%s %s"%(creationMonth.month,creationMonth.year)
             monthNow = time.strftime('%m %Y')
             if creationMonth != monthNow:
                 try:
@@ -1108,12 +1204,23 @@ class lockwatcher(threading.Thread):
                     if 'E_CHASSIS_MOTION' in fileconfig.config['TRIGGERS']['lockedtriggers'] and \
                     not isRunning('chassis_camera',threadDict):
                         startMonitor(threadDict,'chassis_camera')
+                    
+                    if 'E_MOUSE_MV' in fileconfig.config['TRIGGERS']['lockedtriggers'] or \
+                    'E_MOUSE_BTN' in fileconfig.config['TRIGGERS']['lockedtriggers'] and \
+                    not isRunning('mouse',threadDict):  
+                        startMonitor(threadDict,'mouse')
+                        
                 elif lockState == False:
                     if 'E_CHASSIS_MOTION' in fileconfig.config['TRIGGERS']['lockedtriggers'] and \
                         isRunning('chassis_camera',threadDict) and CHASSIS_NONSTOP == False:
                         threadDict['chassis_camera'].stop()
                         threadDict['chassis_camera'] = None
-                
+                    
+                    if 'E_MOUSE_MV' not in fileconfig.config['TRIGGERS']['alwaystriggers'] and \
+                       'E_MOUSE_BTN' not in fileconfig.config['TRIGGERS']['alwaystriggers'] and \
+                       isRunning('mouse',threadDict):
+                        threadDict['mouse'].stop()
+                        threadDict['mouse'] = None  
                         
             #--------------thread status changed, inform any listeners
             elif eventType == 'status':

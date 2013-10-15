@@ -150,6 +150,7 @@ def loadConfig():
         trig['kbd_kill_combo_2']=''
         trig['kbd_kill_combo_2_txt']=''
         trig['keyboard_device']='None'
+        trig['mouse_device']='None'
         trig['low_temp']='21'
         trig['lockedtriggers']='E_DEVICE,E_NETCABLE,E_CHASSIS_MOTION,E_ROOM_MOTION,E_NET_CABLE_IN,E_NET_CABLE_OUT,E_KILL_SWITCH_2'
         trig['alwaystriggers']='E_KILL_SWITCH_1'
@@ -162,6 +163,7 @@ def loadConfig():
         trig['tc_path']=''
         trig['logfile']='/var/log/lockwatcher'
         trig['daemonport']='22191'
+        trig['test_mode']='False'
         
         config.add_section('CAMERAS')
         cameras = config['CAMERAS']

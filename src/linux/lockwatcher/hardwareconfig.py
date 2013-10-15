@@ -22,6 +22,7 @@ def sendToLockwatcher(msg,port):
         s.send(msg.encode())
         s.close()
         
+#may need to change this to the mousedevices format if sysrq is not cutting it for the real keyboard
 def getKBDDevice():
     fd = open('/proc/bus/input/devices')
     text = fd.read()
@@ -30,6 +31,16 @@ def getKBDDevice():
     if matchObj:
         newInput = '/dev/input/'+matchObj.group(1)
         return newInput
+
+def getMouseDevices():
+    fd = open('/proc/bus/input/devices')
+    text = fd.read()
+    #very important: test this on other hardware
+    devices = []
+    matchObjs = re.findall(r'mouse\d+ (event\d+)', text, flags=0)
+    for event in matchObjs:
+        devices.append('/dev/input/'+event)
+    return devices
 
 #gets the /dev/videoX strings and device/manufacturer names for all the cameras
 #returns them in a dict
