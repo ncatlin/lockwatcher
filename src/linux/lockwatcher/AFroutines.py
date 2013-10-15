@@ -4,38 +4,43 @@ Created on 1 Sep 2013
 @author: Nia Catlin
 '''
 
-import os, subprocess, pwd
+import os, subprocess, multiprocessing
 from lockwatcher import fileconfig
 from lockwatcher import hardwareconfig
 
 dbusobj = None
 shuttingDown = False
 emailAlert = False
-   
-def demote(user_uid, user_gid):
-    def result():
-        os.setgid(user_gid)
-        os.setuid(user_uid)
-    return result
-
-
 
 #have to spawn a nonroot process to do it
+def lockProcess():
+    if fileconfig.DESK_UID != None:
+        os.setuid(fileconfig.DESK_UID)
+        
+    lockProgram = fileconfig.LOCKCMD
+    try:
+        if lockProgram != None:
+            subprocess.call(lockProgram.split(' '))
+    except:
+        pass
+    
+    try:
+        os.system('qdbus org.kde.screensaver /ScreenSaver Lock') 
+    except:
+        pass
+    
+    try:
+        os.system('qdbus org.kde.screensaver /ScreenSaver Lock') 
+    except:
+        pass
+    
 def lockScreen():
-    pw_record = pwd.getpwuid(fileconfig.DESK_UID)
-    user_name      = pw_record.pw_name
-    user_home_dir  = pw_record.pw_dir
-    user_uid       = pw_record.pw_uid
-    user_gid       = pw_record.pw_gid
-    env = os.environ.copy()
-    env[ 'HOME'     ]  = user_home_dir
-    env[ 'LOGNAME'  ]  = user_name
-    env[ 'USER'     ]  = user_name
-    
-    lockProgram = fileconfig.config['TRIGGERS']['lockprogram']
-    
-    subprocess.Popen(lockProgram, preexec_fn=demote(user_uid, user_gid), env=env)
-
+    try:
+        P = multiprocessing.Process(target=lockProcess)
+        P.start()
+    except:
+        return False
+    return True 
 
 def standardShutdown():
     global shuttingDown

@@ -10,25 +10,16 @@ Requires 'motion' and 'ifplugd' to be running and properly configured
 to use the motion and network connection triggers
 '''
 
-import os, sys, inspect
-cmd_folder = os.path.realpath(os.path.abspath(os.path.split(inspect.getfile( inspect.currentframe() ))[0]))
-if cmd_folder not in sys.path:
-    sys.path.insert(0, cmd_folder)
-
-cmd_subfolder = os.path.realpath(os.path.abspath(os.path.join(os.path.split(inspect.getfile( inspect.currentframe() ))[0],"lib")))
-if cmd_subfolder not in sys.path:
-    sys.path.insert(0, cmd_subfolder)
-    
-import multiprocessing
+import os, sys
+import syslog, time, datetime
 import threading, queue, struct
-import subprocess,time
-import dbus, socket
-import pyudev, sensors #bastien leonards pysensors 
+import subprocess,multiprocessing
+import socket, select
+import pyudev 
 import imapclient
-import syslog, datetime
+import dbus
 
-from gi.repository import GObject
-from pwd import getpwnam
+from gi.repository import GObject 
 from dbus.mainloop.glib import DBusGMainLoop
 
 from lockwatcher import sendemail
@@ -36,6 +27,12 @@ from lockwatcher import hardwareconfig
 from lockwatcher import AFroutines
 from lockwatcher import fileconfig
 from lockwatcher import daemon
+
+try:
+    import sensors #bastien leonards pysensors
+    GOTSENSORS = True
+except:
+    GOTSENSORS = False
 
 DAEMONPORT = int(fileconfig.config['TRIGGERS']['daemonport'])
 
@@ -52,17 +49,29 @@ def eventHandle(event_type,eventReason):
     else:
         eventQueue.put(("log","[%s - Trigger %s (ignored)]: %s"%(lockedStateText[locked],event_type,eventReason)))
 
+#handler for pyudev device events
 def device_changed(action,device):
     eventHandle('E_DEVICE',"Device event trigger. Device: %s, Event: %s"%(device,action))
 
-
-#------------------------------------------------------------------
-'''
-there used to be a nice dbus monitoring thing here, but it didn't play
-nicely with the root privs of our daemon
-now we have this 'look for xxx process appearing' horrible thing which 
-will need to be tweaked for every single different system in the universe
-'''
+#handler for dbus screensaver activity
+def scrnLocked(state):
+    s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+    s.connect(('127.0.0.1',DAEMONPORT))
+    if state == 1:s.send(b'Locktrue')
+    else: s.send(b'Lockfalse')
+ 
+#cannot interact with user screen as root
+#make new process to do it as uid of desktop session process
+def lockMonitorProcess():
+        try:
+            os.setuid(fileconfig.DESK_UID)
+            session_bus = dbus.SessionBus(mainloop=DBusGMainLoop())
+            #subscribe to kde and gnome lock notification signals
+            session_bus.add_signal_receiver(scrnLocked,'ActiveChanged','org.freedesktop.ScreenSaver')
+            session_bus.add_signal_receiver(scrnLocked,'ActiveChanged','org.gnome.ScreenSaver')
+            GObject.MainLoop().run()
+        except:
+            addLogEntry('Lockwatcher dbus monitor process failed with exception: %s'%str(sys.exc_info()))
     
 #gets the exe,arguments of the process 
 def getExeCmd(pid):
@@ -73,16 +82,23 @@ def getExeCmd(pid):
         fd.close()
     except:
         return None
-    if len(contents) == 0: return None
     
+    if len(contents) == 0: return None    
     return contents.split('\x00')
-    
-#may have to check args to some of these processes
-lockProgramList = ['kscreenlocker','kscreenlocker_greet','xscreensaver-command','gnome-screensaver','xlock']
+
+#listens for screensaver notifications on dbus
+#Also watches for lock processes stopping/starting for environments
+#where dbus notifications are not supported.
+lockProgramList = ['kscreenlocker','kscreenlocker_greet','gnome-screensaver-dialog','mate-screensaver-dialog','xlock']
 class lockMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
+        self.process = None
         self.name = "lockMonThread"
+        
+        if fileconfig.DESK_UID != None:
+            p = multiprocessing.Process(target=lockMonitorProcess)
+            p.start()
         
         #detect initial lock state by looking for lock processes
         for process in os.listdir('/proc'):
@@ -92,73 +108,109 @@ class lockMonitor(threading.Thread):
             cmd = getExeCmd(pid)
             if cmd == None: continue
             if cmd[0] in lockProgramList:
-                hardwareconfig.lockState = True
+                eventQueue.put(('lock',True))
                 break
         else:
-            hardwareconfig.lockState = False
+            eventQueue.put(('lock',False))
             
     def run(self):
         self.running = True
         lockState = hardwareconfig.checkLock() 
         
+        p = subprocess.Popen(['/usr/bin/pgrep', '-xl','xscreensaver'],stdout=subprocess.PIPE)
+        output = p.communicate()[0].decode('UTF-8')
         
-        while self.running == True:
-            numDirs = os.stat('/proc')[3]
-            procList = os.listdir('/proc')
-            while lockState == False:
-                if self.running == False: break
-                #not too worried about this
-                #timeit.timeit('os.stat("/proc")[3]',setup='import os')
-                newNumDirs = os.stat('/proc')[3]
-                if  newNumDirs == numDirs: 
-                    time.sleep(0.5)
-                    continue
-                
-                #the rest is probably a lot slower, but at the rate 
-                #processes stop/start it shoudln't matter
-                #a DoS based on mass process creation/termination may be considered though
-                numDirs = newNumDirs
-                newProcList = os.listdir('/proc')
-                newFiles = list(set(newProcList) - set(procList))
-                
-                for file in newFiles:
-                    try:
-                        pid = int(file)
-                    except:
-                        continue #not a pid
-                    
-                    cmdLine = getExeCmd(pid)
-                    if cmdLine == None: continue
-                    
-                    procName = cmdLine[0].rpartition('/')[2]
-                    print('process name: ',procName)
-                    if procName not in lockProgramList:
-                        continue
-                    else:
-                        lockState = True
-                        hardwareconfig.lockState = True
-                        break
-                else:
-                    procList = newProcList
-                    
-            if self.running == False: break
-                    
-            while lockState == True:
+        #we found xscreensaver running, monitor it for locking
+        if 'xscreensaver-command' in output:
+            p = subprocess.Popen(['/usr/bin/xscreensaver-command', '-watch'],stdout=subprocess.PIPE)
+            self.process = p
+            while self.running == True:
                 try:
-                    os.kill(pid,0)
-                    time.sleep(0.5)
-                    if self.running == False: break
-                    continue
+                    output = p.stdout.readline()
                 except:
-                    lockState = False
-                    hardwareconfig.lockState = False
+                    if self.running == False: return
+                    time.sleep(0.5)
+                    p = subprocess.Popen(['/usr/bin/xscreensaver-command', '-watch'],stdout=subprocess.PIPE)
+                    self.process = p
+                    continue
+                
+                try:
+                    output = output.decode('UTF-8').split(' ')[0]
+                except:
+                    continue
+
+                if output == 'LOCK': 
+                    eventQueue.put(('lock',True))
+                    eventQueue.put(('log','Detected xscreensaver locked'))
+                elif output == 'UNBLANK':
+                    eventQueue.put(('lock',False))
+                    eventQueue.put(('log','Detected xscreensaver unlocked'))
+                    
+        else:
+            #other types of screensavers require watching for appearance,vanishing of lock process
+            while self.running == True:
+                numDirs = os.stat('/proc')[3]
+                procList = os.listdir('/proc')
+                lockProcessPid = None
+                while lockState == False:
+                    if self.running == False: break
+                    #not too worried about this
+                    #timeit.timeit('os.stat("/proc")[3]',setup='import os')
+                    newNumDirs = os.stat('/proc')[3]
+                    if  newNumDirs == numDirs: 
+                        time.sleep(0.5)
+                        continue
+                    
+                    #the rest is probably a lot slower, but at the rate 
+                    #processes stop/start it shoudln't matter
+                    #a DoS based on mass process creation/termination may be considered though
+                    numDirs = newNumDirs
+                    newProcList = os.listdir('/proc')
+                    newFiles = list(set(newProcList) - set(procList))
+                    
+                    for file in newFiles:
+                        try:
+                            lockProcessPid = int(file)
+                        except:
+                            continue #not a pid
+                        
+                        cmdLine = getExeCmd(lockProcessPid)
+                        if cmdLine == None: continue
+                        
+                        procName = cmdLine[0].rpartition('/')[2].rstrip(']')
+                        
+                        #eventQueue.put(('log','process started: '+procName)) #useful for debugging
+                        if procName not in lockProgramList:
+                            continue
+                        else:
+                            lockState = True
+                            eventQueue.put(('lock',True))
+                            eventQueue.put(('log','Detected screen locked'))
+                            break
+                    else:
+                        procList = newProcList
+                        
+                if self.running == False: break
+                
+                while lockState == True:
+                    try:
+                        os.kill(lockProcessPid,0)
+                        time.sleep(0.5)
+                        if self.running == False: break
+                        continue
+                    except:
+                        lockState = False
+                        eventQueue.put(('lock',False))
+
+                eventQueue.put(('log','Detected screen Unlocked'))
              
     def stop(self):
         self.running = False
+        if self.process != None:
+            self.process.kill()
         
                             
-#-------------------------------------------------------------------------------
-                         
+#waits for events from config programs and the dbus monitor
 monitoringRoom = False
 class IPCMonitor(threading.Thread):
     def __init__(self):
@@ -172,9 +224,11 @@ class IPCMonitor(threading.Thread):
             self.listenSocket = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
             self.listenSocket.bind(('127.0.0.1',DAEMONPORT))
         except:
+            addLogEntry('Could not bind, closing')
             eventQueue.put(('log','Could not bind to 127.0.0.1:%s, please kill any other lockwatchers and try again'%DAEMONPORT))
             eventQueue.put(('status','ipc','Error: Lockwatcher already running'))
             eventQueue.put(('stop',None))
+            
             return
         
         eventQueue.put(('status','ipc','Active'))
@@ -194,12 +248,13 @@ class IPCMonitor(threading.Thread):
                 except: pass
                 continue
             
-            data = self.listenSocket.recv(1024)
-            command = data.decode('UTF-8')  
+            data = self.listenSocket.recv(1024).decode('UTF-8')
             
-            if ':' in command: 
-                command,value = command.split(':')
-            else: value = None
+            if ':' in data: 
+                command,value = data.split(':')
+            else: 
+                command = data
+                value = None
             
             if command == 'newListener' and value != None:
                 eventQueue.put(('newListener',value))
@@ -211,12 +266,16 @@ class IPCMonitor(threading.Thread):
                 eventQueue.put(('reloadConfig',None))
             elif command == 'stop':
                 eventQueue.put(('stop',None))
+            elif command == 'Locktrue':
+                eventQueue.put(('lock',True))
+                eventQueue.put(('log','Detected screen locked'))
+            elif command == 'Lockfalse':
+                eventQueue.put(('lock',False))
+                eventQueue.put(('log','Detected screen unlocked'))
             else:
-                eventQueue.put(('log','Bad local command received: %s'%command))
+                eventQueue.put(('log','Bad local command received: %s'%str(command)))
             
-                
-        eventQueue.put(('status','ipc','Not Running'))
-                
+        eventQueue.put(('status','ipc','Not Started'))   
                 
     def stop(self):
         self.running = False
@@ -224,62 +283,83 @@ class IPCMonitor(threading.Thread):
             self.listenSocket.shutdown(socket.SHUT_RD)
         except OSError:
             pass #107 endpoint not connected, but socket still gets shutdown so ignore it
-        
+
+#keep asking ifplugstatus how the network interfaces are doing        
+#might be good to replicate its functionality instead of requiring+executing it
 class netcableMonitor(threading.Thread):
     def __init__(self):  
         threading.Thread.__init__(self)
         self.name = "netadapters"
     def run(self):
-        monitorUpAdapters = {}
-        for iface in fileconfig.config['TRIGGERS']['adapterconids'].split(','):
-            monitorUpAdapters[iface] = None
-        
-        monitorDownAdapters = {}
-        for iface in fileconfig.config['TRIGGERS']['adapterdisconids'].split(','):
-            monitorDownAdapters[iface] = None
-                
-        #todo: tests etc
-        
-        out = subprocess.check_output(['/usr/sbin/ifplugstatus'])
-        devString = out.decode("utf-8").strip('\n').split('\n')
-        for dev in devString:
-            devName,devStatus = dev.split(': ')
-            if devName in monitorUpAdapters.keys():
-                monitorUpAdapters[devName] = devStatus
-            if devName in monitorDownAdapters.keys():
-                monitorDownAdapters[devName] = devStatus
-
         self.running = True
-        eventQueue.put(('status','netadapters',"Active"))
+        
         while self.running == True:
-            time.sleep(1)
-            out = subprocess.check_output(['/usr/sbin/ifplugstatus'])
+            eventQueue.put(('status','netadapters',"Loading Config..."))
+            
+            monitorUpAdapters = {}
+            for iface in fileconfig.config['TRIGGERS']['adapterconids'].split(','):
+                monitorUpAdapters[iface] = None
+            
+            monitorDownAdapters = {}
+            for iface in fileconfig.config['TRIGGERS']['adapterdisconids'].split(','):
+                monitorDownAdapters[iface] = None
+            
+            ifplugstatus = '/usr/sbin/ifplugstatus'
+            if not os.access(ifplugstatus,os.X_OK):
+                ifplugstatus = '/usr/bin/ifplugstatus'
+                if not os.access(ifplugstatus,os.X_OK):
+                    eventQueue.put(('log','netcableMonitor failed: Cannot find ifplugstatus. Install ifplugd.'))
+                    eventQueue.put(('status','netadapters',"Error: ifplugstatus not available"))
+                    return
+            
+            out = subprocess.check_output([ifplugstatus])
             devString = out.decode("utf-8").strip('\n').split('\n')
             for dev in devString:
                 devName,devStatus = dev.split(': ')
                 if devName in monitorUpAdapters.keys():
-                    if monitorUpAdapters[devName] != devStatus:
-                        if devStatus == 'link beat detected':
-                            eventHandle('E_NETCABLE','%s: (%s->%s)'%(devName,monitorUpAdapters[devName],devStatus))
-                        monitorUpAdapters[devName] = devStatus
-
+                    monitorUpAdapters[devName] = devStatus
                 if devName in monitorDownAdapters.keys():
-                    if monitorDownAdapters[devName] != devStatus:
-                        if devStatus == 'unplugged':
-                            eventHandle('E_NETCABLE','%s: (%s->%s)'%(devName,monitorUpAdapters[devName],devStatus))
-                        monitorUpAdapters[devName] = devStatus      
+                    monitorDownAdapters[devName] = devStatus
+    
+            self.listening = True
+            eventQueue.put(('status','netadapters',"Active"))
+            while self.listening == True:
+                time.sleep(1)
+                out = subprocess.check_output([ifplugstatus])
+                devString = out.decode("utf-8").strip('\n').split('\n')
+                for dev in devString:
+                    devName,devStatus = dev.split(': ')
+                    if devName in monitorUpAdapters.keys():
+                        if monitorUpAdapters[devName] != devStatus:
+                            if devStatus == 'link beat detected':
+                                eventHandle('E_NETCABLE','%s: (%s->%s)'%(devName,monitorUpAdapters[devName],devStatus))
+                            monitorUpAdapters[devName] = devStatus
+    
+                    if devName in monitorDownAdapters.keys():
+                        if monitorDownAdapters[devName] != devStatus:
+                            if devStatus == 'unplugged':
+                                eventHandle('E_NETCABLE','%s: (%s->%s)'%(devName,monitorDownAdapters[devName],devStatus))
+                            monitorDownAdapters[devName] = devStatus      
         
-        eventQueue.put(('status','netadapters',"Not Running"))     
-         
+        eventQueue.put(('status','netadapters',"Not Started"))     
+    
+    def reloadConfig(self):
+        self.listening = False
+            
     def stop(self):
         self.running = False               
-
+        self.listening = False
 
 #lack of access to DIMM SPD data means this only checks motherboard
 class temperatureMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.name = "TempMonThread"
+        
+        if GOTSENSORS == False:
+            eventQueue.put(('log',"No pysensors module installed. Could not monitor motherboard temperature."))
+            eventQueue.put(('status','temperature',"Error: No pysensors"))
+            return
         
         self.running = False
         for chip in sensors.get_detected_chips():
@@ -318,7 +398,7 @@ class temperatureMonitor(threading.Thread):
             if newTemp < fileconfig.config['TRIGGERS']['LOW_TEMP']: 
                 eventHandle(('E_TEMPERATURE',"%s degrees C"%newTemp))
                 
-        eventQueue.put(('status','temperature',"Not running"))         
+        eventQueue.put(('status','temperature',"Not Started"))         
             
     def stop(self):
         self.running = False
@@ -374,7 +454,8 @@ class intrusionMon(threading.Thread):
     def stop(self):
         self.die = True
 '''                        
-        
+
+#connects to specified bluetooth device, alerts when connection lost   
 class bluetoothMon(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self) 
@@ -388,10 +469,15 @@ class bluetoothMon(threading.Thread):
             eventQueue.put(('status','bluetooth',"Error: Device not configured"))
             return
         
+        #if someone needs it then the ability to choose port is there
+        if fileconfig.config.has_option('TRIGGERS', 'BLUETOOTH_PORT'):
+            bluetoothPort = fileconfig.config['TRIGGERS']['BLUETOOTH_PORT']
+        else: bluetoothPort = 2
+        
         try:
             self.s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
             self.s.settimeout(50)
-            self.s.connect((BTDevID,2))
+            self.s.connect((BTDevID,bluetoothPort))
         except:
             eventQueue.put(('log',"Error: Bluetooth connection to %s unavailable or unauthorised"%BTDevID))
             eventQueue.put(('status','bluetooth',"Error: Connection Failed"))
@@ -415,10 +501,13 @@ class bluetoothMon(threading.Thread):
             self.s.close()
             self.s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
             self.s.settimeout(600)
-            #make the port configurable?
-            self.s.connect((fileconfig.config['TRIGGERS']['BLUETOOTH_DEVICE_ID'],2)) 
+
+            try:
+                self.s.connect((fileconfig.config['TRIGGERS']['BLUETOOTH_DEVICE_ID'],bluetoothPort)) 
+            except:
+                continue
             
-        eventQueue.put(('status','bluetooth',"Not running"))   
+        eventQueue.put(('status','bluetooth',"Not Started"))   
          
     def stop(self):
         self.running = False
@@ -430,7 +519,9 @@ def setupIMAP(config):
     server.select_folder('INBOX')
     eventQueue.put(('log',"Established IMAP connection"))
     return server
-            
+
+#waits for new emails delivered to imap inbox
+#puts them in the queue if labelled as sent by expected sender
 class emailMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
@@ -458,7 +549,7 @@ class emailMonitor(threading.Thread):
         connectionFails = 0
         
         if self.running == False:
-            eventQueue.put(("Status",'email','Not Running'))
+            eventQueue.put(("Status",'email','Not Started'))
         
         
         while self.running == True:
@@ -467,7 +558,7 @@ class emailMonitor(threading.Thread):
                 seqid = self.server.idle_check(840)
             except ValueError:
                 if self.running == False: #terminate() was called
-                    eventQueue.put(("Status",'email','Not Running')) 
+                    eventQueue.put(("Status",'email','Not Started')) 
                     return
                 
             if seqid == []: #no mail
@@ -506,7 +597,7 @@ class emailMonitor(threading.Thread):
                 eventQueue.put(('log',"Got an email with unknown addressee: %s (need addressee %s)"%
                                 (addressee,intendedAddressee)))
                 
-        eventQueue.put(('status','email',"Not Running"))
+        eventQueue.put(('status','email',"Not Started"))
         
     def stop(self):
         self.running = False
@@ -515,7 +606,7 @@ class emailMonitor(threading.Thread):
         except:
             pass
 
-import select
+
 #find better way to choose event - /proc/bus/input/devics is good       
 class keyboardMonitor(threading.Thread):
     def __init__(self):
@@ -526,10 +617,12 @@ class keyboardMonitor(threading.Thread):
         self.running = False
         
         kbd_device = fileconfig.config['TRIGGERS']['KEYBOARD_DEVICE']
-        if kbd_device == None:
-            eventQueue.put(('log',"Keyboard not found"))
-            eventQueue.put(('status','killSwitch',"Error: Keyboard not found"))
-            return
+        if kbd_device == 'None' or not os.path.exists(kbd_device):
+            kbd_device = hardwareconfig.getKBDDevice()
+            if kbd_device == None:
+                eventQueue.put(('log',"Keyboard not found"))
+                eventQueue.put(('status','killSwitch',"Error: Keyboard not found"))
+                return
         
         try:
             self.dev = open(kbd_device,'rb')
@@ -543,6 +636,7 @@ class keyboardMonitor(threading.Thread):
     def run(self):
         while self.running == True:
             watchKeys = []
+            
             triggerKeys1 = {}
             if 'E_KILL_SWITCH_1' in fileconfig.getActiveTriggers():
                 triggerCombo = fileconfig.config['TRIGGERS']['kbd_kill_combo_1'].split('+')
@@ -568,7 +662,7 @@ class keyboardMonitor(threading.Thread):
             keyEventFormat = 'llHHI'
             keyEventSize = struct.calcsize(keyEventFormat)
             
-            self.running = True
+            #wait for new input on keyboard device
             self.pollobject = select.poll()
             self.pollobject.register(self.dev)
             eventQueue.put(('status','killSwitch',"Active"))
@@ -576,14 +670,14 @@ class keyboardMonitor(threading.Thread):
             self.listening = True
             while self.listening == True:
                 result = self.pollobject.poll(1)
-                if self.listening == False: continue
+                if self.listening == False: break
                 if result[0][1] != 5: continue 
                 
                 event = self.dev.read(keyEventSize)
                 (time1, time2, eType, kCode, pressed) = struct.unpack(keyEventFormat, event)
+                if eType != 1: continue #if not new key down
+                
                 kCode = str(kCode)
-                if eType != 1: continue
-    
                 if kCode in watchKeys:
                     if pressed == 1:
                         if kCode in triggerKeys1.keys():
@@ -602,7 +696,7 @@ class keyboardMonitor(threading.Thread):
                         if kCode in triggerKeys1.keys(): triggerKeys1[kCode] = False
                         if kCode in triggerKeys2.keys(): triggerKeys2[kCode] = False
                     
-        eventQueue.put(('status','killSwitch',"Not running")) 
+        eventQueue.put(('status','killSwitch',"Not Started")) 
         
     def reloadConfig(self):
         self.listening = False
@@ -612,6 +706,7 @@ class keyboardMonitor(threading.Thread):
         self.listening = False
         self.dev.close()
 
+#monitor for motion with settings passed to thread
 class camera_monitor(threading.Thread):
     def __init__(self,device,settings):
         threading.Thread.__init__(self)
@@ -631,19 +726,22 @@ class camera_monitor(threading.Thread):
             eventQueue.put(('log',"%s: Error: Camera event not set"%(self.name))) 
             return
         
+        eventQueue.put(('status',statusName,"Starting camera...")) 
+        
         threshold = self.settings['threshold']
         fps = self.settings['fps']
         minframes = self.settings['minframes']
         savepic = self.settings['savepic']
 
-        args = ["./motion-lw","-v%s"%self.device,"-t %s"%threshold,"-m %s"%minframes,"-f %s"%fps]
-        if savepic == True: args.append("-j")
+        args = ["/usr/local/bin/motion-lw","-v%s"%self.device,"-t %s"%threshold,"-m %s"%minframes,"-f %s"%fps]
+        savePath = fileconfig.config['CAMERAS']['image_path']
+        if savepic == True: args.append("-j %s"%savePath)
         
         try:
             monitorproc = subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-        except subprocess.CalledProcessError as e:
+        except:
             eventQueue.put(('status',statusName,"Error: Could not run camera monitor")) 
-            eventQueue.put(('log',"%s: Error: Could not run camera monitor: %s"%(self.name,e))) 
+            eventQueue.put(('log',"%s: Error: Could not run camera monitor: %s"%(self.name,str(sys.exc_info())))) 
             return
         
         if monitorproc == []:
@@ -676,7 +774,7 @@ class camera_monitor(threading.Thread):
                     self.process.kill()
                     return
                 
-        eventQueue.put(('status',statusName,"Not Running"))
+        eventQueue.put(('status',statusName,"Not Started"))
                     
     def stop(self):
         self.running = False
@@ -688,7 +786,7 @@ REMOTE_STOPMONITOR = 3
 REMOTE_SHUTDOWN = 4
 REMOTE_KILLSWITCH = 5
 commandList = range(REMOTE_LOCK,REMOTE_KILLSWITCH+1)
-
+#authenticated email command is passed here for execution
 def executeRemoteCommand(command,threadDict):
     config = fileconfig.config
     if command == REMOTE_LOCK:
@@ -827,12 +925,11 @@ def startMonitor(threadDict,monitor):
         threadDict['netadapters'] = netcableMonitor()
         threadDict['netadapters'].start()
         return True
+    
+    else: eventQueue.put(('log','Request for unknown monitor start: %s'%str(monitor)))
 
 
-
-
-
-
+#send msg to each connection in listeners
 def broadcast(listeners,msg):
     badConnections = []
     msg = msg+'@'#message separator
@@ -846,6 +943,7 @@ def broadcast(listeners,msg):
     for connection in badConnections:
         listeners.remove(connection)
 
+#add msg to log file (or syslog if it isnt usable) + send to all listeners
 def addLogEntry(msg,listeners=None):
     entry = time.strftime('[%x %X] ')+msg+'\n'
     logPath = fileconfig.config['TRIGGERS']['logfile']
@@ -862,32 +960,72 @@ def addLogEntry(msg,listeners=None):
 monitorThread = None
 def createLockwatcher():
     global monitorThread
-        
     monitorThread = lockwatcher()
+
+def isRunning(threadName,threadDict):
+    if threadName in threadDict.keys() and \
+        threadDict[threadName] != None and \
+            threadDict[threadName].is_alive() == True:
+                return True
+    else: return False
 
 class lockwatcher(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.name = 'Lockwatcher'
+        self.running = True
+        self.threadDict = {}
+        
     def run(self):
+        while self.running == True:
+            lastStarted = time.time()
+            try:
+                self.mainloop()
+            except:
+                #got an exception, kill everything
+                for thread in self.threadDict.values():
+                    if thread == None: continue
+                    if thread.is_alive(): 
+                        thread.stop()
+                
+                #if we started recently, die to prevent a noisy loop
+                if time.time() < lastStarted + 10:
+                    addLogEntry('Lockwatcher died after start with exception: %s. Exiting.'%str(sys.exc_info()))
+                    self.running = False
+                    break
+
+                #otherwise try to restart
+                addLogEntry('Lockwatcher died with exception: %s. Restarting'%str(sys.exc_info()))
+                lastStarted = time.time()
+                time.sleep(1)
+            
+    def mainloop(self):
         addLogEntry('Initialising lockwatcher')
         global monitoringRoom
         
-        listeners = []
-        threadDict= {}
-        threadStatuses = {}
+        listeners = []  #keep active connections to config programs here
+        threadDict = {} #keep the running threads here
+        self.threadDict = threadDict
+        threadStatuses = {} #keep thread statuses here so config programs can have them
+        
         startMonitor(threadDict,'ipc')
-        try:
-            startMonitor(threadDict,'lockMon')
-        except:
-            addLogEntry('excep fatal:'+str(sys.exc_info()))
-            return
+        startMonitor(threadDict,'lockMon')
+
         activeTriggers = fileconfig.getActiveTriggers()
-        #monitor for the keyboard killswitch command
+
         if 'E_KILL_SWITCH_1' in activeTriggers or 'E_KILL_SWITCH_2' in activeTriggers:
             startMonitor(threadDict,'killSwitch')
-            
+        
+        #run the chassis camera if set to trigger anytime
+        if fileconfig.config.has_option('TRIGGERS', 'CHASSIS_LOCK_NONSTOP') and \
+            fileconfig['TRIGGERS']['CHASSIS_LOCK_NONSTOP'] == 'True':
+                CHASSIS_NONSTOP = True
+        else: CHASSIS_NONSTOP = False
+        
         if 'E_CHASSIS_MOTION' in fileconfig.config['TRIGGERS']['alwaystriggers']:
+            startMonitor(threadDict,'chassis_camera')
+        #run it if set to monitor all the time, even if it only triggers when locked
+        elif 'E_CHASSIS_MOTION' in fileconfig.config['TRIGGERS']['lockedtriggers'] and CHASSIS_NONSTOP == True:
             startMonitor(threadDict,'chassis_camera')
             
         if 'E_BLUETOOTH 'in activeTriggers:
@@ -905,7 +1043,7 @@ class lockwatcher(threading.Thread):
         if 'E_TEMPERATURE' in activeTriggers:
             startMonitor(threadDict,'temperature') 
         
-        ''' not tested yet
+        ''' not tested yet - probably based on a flawed premise
         if 'E_INTRUSION' in fileconfig.config['TRIGGERS']['alwaystriggers']: 
             startMonitor(threadDict,'intrusion') 
         '''
@@ -918,15 +1056,15 @@ class lockwatcher(threading.Thread):
             if creationMonth != monthNow:
                 try:
                     open(logPath, 'w').close()
+                    addLogEntry('New log started')
                 except: pass
         
         
-        startMessage = "Lockwatcher monitoring started"
-        eventQueue.put(('log',startMessage))
+        eventQueue.put(('log',"Lockwatcher monitoring started"))
         
         shutdownActivated = False
         
-        while True:
+        while self.running == True:
             event = eventQueue.get(block=True, timeout=None)
             eventType = event[0]
         
@@ -966,7 +1104,16 @@ class lockwatcher(threading.Thread):
                 lockState = event[1]
                 hardwareconfig.setLock(lockState)
                 
-                'previously started/stopped the polling threads here but no real benefits'
+                if lockState == True:
+                    if 'E_CHASSIS_MOTION' in fileconfig.config['TRIGGERS']['lockedtriggers'] and \
+                    not isRunning('chassis_camera',threadDict):
+                        startMonitor(threadDict,'chassis_camera')
+                elif lockState == False:
+                    if 'E_CHASSIS_MOTION' in fileconfig.config['TRIGGERS']['lockedtriggers'] and \
+                        isRunning('chassis_camera',threadDict) and CHASSIS_NONSTOP == False:
+                        threadDict['chassis_camera'].stop()
+                        threadDict['chassis_camera'] = None
+                
                         
             #--------------thread status changed, inform any listeners
             elif eventType == 'status':
@@ -995,7 +1142,7 @@ class lockwatcher(threading.Thread):
                         thread.stop()
                 addLogEntry('Local stop command received')
                 broadcast(listeners,'Shutdown')
-                return
+                self.running = False
             
             #--------------new mail in imap inbox addressed to us
             elif eventType == 'mail': 
@@ -1035,28 +1182,30 @@ class lockwatcher(threading.Thread):
                             AFroutines.emergency()
                             
                     continue
-                
+            
+            #config program wants a monitor started   
             elif eventType == 'startMonitor':
                 monitor = event[1]
-                if monitor not in threadDict or threadDict[monitor].is_alive() == False:
+                if not isRunning(monitor,threadDict):
                     startMonitor(threadDict,monitor)
                 else: eventQueue.put(('log','Error starting thread %s: Already running '%monitor))
-                
+            
+            #config program wants a monitor stopped    
             elif eventType == 'stopMonitor':    
                 monitor = event[1]
-                if monitor in threadDict and threadDict[monitor].is_alive() == True:
+                if isRunning(monitor,threadDict):
                     threadDict[monitor].stop()
-                    if monitor == 'devices': eventQueue.put(('status','devices',"Not Running"))
+                    if monitor == 'devices': eventQueue.put(('status','devices',"Not Started"))
                 else: 
-                    eventQueue.put(('log','Failed to stop thread %s: Not running '%monitor))
-                    
+                    eventQueue.put(('log','Failed to stop thread %s: Not Started '%monitor))
+            
+            #thread has a new status      
             elif eventType == 'Status':
-                #if self.statuses != None: self.statuses[event[1]].set(event[2])
                 threadStatuses[event[1]] = event[2]
-
                 msg = 'Status::%s::%s'%(event[1],event[2])
                 broadcast(listeners,msg)
-                    
+            
+            #config program wants all the thread statuses        
             elif eventType == 'getStatuses':
                 msg = 'AllStatuses::'
                 for name,value in threadStatuses.items():
@@ -1064,22 +1213,25 @@ class lockwatcher(threading.Thread):
                 msg = msg[:-1]
                 
                 broadcast(listeners,msg)  
-                    
+            
+            #configuration changed, make threads update their behaviour
+            #does not yet apply to everything        
             elif eventType == 'reloadConfig':
                 fileconfig.reloadConfig()
-                if 'killSwitch' in threadDict.keys() and threadDict['killSwitch'].is_alive():
-                    threadDict['killSwitch'].reloadConfig()
-                
+                if isRunning('killSwitch',threadDict):  threadDict['killSwitch'].reloadConfig()
+                if isRunning('netadapters',threadDict): threadDict['netadapters'].reloadConfig()    
+            
+            #new config program wants our broadcasts   
             elif eventType == 'newListener':
                 port = int(event[1])
                 s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-                eventQueue.put(('log','Lockwatcher connected to new configuration client'))
                 try:
                     s.connect( ('127.0.0.1', port) )
                 except: 
                     eventQueue.put(('log','Error: Failed to connect to client port: '+str(port)))
                     continue
                 
+                eventQueue.put(('log','Lockwatcher connected to new configuration client'))
                 s.send(b'True@')
                 listeners.append(s)      
                   
@@ -1109,8 +1261,16 @@ if __name__ == "__main__":
                 lwdaemon = lockWatcherDaemon('/var/run/lockwatcher.pid')
                 if 'start' == sys.argv[1]:
                         if os.geteuid() != 0:
-                            print("Run this using sudo")
+                            print("Run this as root/sudo root")
                             exit()
+                        try:
+                            listenSocket = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+                            listenSocket.bind(('127.0.0.1',DAEMONPORT))
+                            listenSocket.close()
+                        except:
+                            print('Could not bind to 127.0.0.1:%s. Lockwatcher already running?'%str(DAEMONPORT))
+                            exit()
+                        
                         print('Starting lockwatcher...')
                         lwdaemon.start()
                 elif 'stop' == sys.argv[1]:
@@ -1118,7 +1278,8 @@ if __name__ == "__main__":
                 elif 'restart' == sys.argv[1]:
                         lwdaemon.restart()
                 else:
-                        print( "Unknown command")
+                        print("Unknown command %s"%str(sys.argv[1]))
+                        print( "usage: %s start|stop|restart" % sys.argv[0])
                         sys.exit(2)
                 sys.exit(0)
         else:

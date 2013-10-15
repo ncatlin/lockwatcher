@@ -4,8 +4,32 @@
 Various hardware and system state interrogation routines
 '''
 import subprocess,threading,socket,os,time
-import smtplib, sensors
+import smtplib, re
 import imapclient
+try:
+    import sensors
+    GOTSENSORS = True
+except:
+    GOTSENSORS = False
+
+def sendToLockwatcher(msg,port):
+        s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+        try:
+            s.connect(('127.0.0.1', int(port)))
+        except:
+            #should probably have some kind of error reporting here
+            return
+        s.send(msg.encode())
+        s.close()
+        
+def getKBDDevice():
+    fd = open('/proc/bus/input/devices')
+    text = fd.read()
+    #very important: test this on other hardware
+    matchObj = re.search(r'sysrq kbd (event\d+)', text, flags=0)
+    if matchObj:
+        newInput = '/dev/input/'+matchObj.group(1)
+        return newInput
 
 #gets the /dev/videoX strings and device/manufacturer names for all the cameras
 #returns them in a dict
@@ -35,7 +59,6 @@ def getCamNames():
 
 lockState = False
 def setLock(state):
-    print('Setting lock state to ',state)
     global lockState
     if state in [True,False]:
         lockState = state

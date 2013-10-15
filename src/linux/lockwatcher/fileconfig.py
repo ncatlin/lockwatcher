@@ -5,6 +5,7 @@ Various config file handling routines
 '''
 import configparser,re,pickle,os
 import sys,subprocess
+from lockwatcher import hardwareconfig
 
 TRIG_LOCKED = 0
 TRIG_ALWAYS = 1
@@ -16,29 +17,8 @@ config = None
 def writeConfig():
     with open(CONFIG_FILE, 'w') as configfile:
             config.write(configfile,space_around_delimiters=False)
+    hardwareconfig.sendToLockwatcher('reloadConfig',config['TRIGGERS']['daemonport'])
 
-def writeMotionConfig(file,stat,newVal):    
-    fd = open(file,'r')
-    text = fd.read()
-    fd.close()
-    
-    regex = stat
-    
-    res = re.search('(^;?\s*%s.*$)'%regex,text,re.MULTILINE)  
-    if res != None: 
-        x,y = res.span(1)
-    else: 
-        print(stat+' not found')
-        return
-        
-    try:
-        fd = open(file,'w')
-        fd.write(text[:x]+'%s %s'%(regex,newVal)+text[y:])
-        fd.close()
-    except:
-        print("cant edit config file ",file)
-    return  
-           
 def checkBtnChanged(btn):
 
     btnName = btn.get_name()
@@ -153,6 +133,14 @@ def generateKCodeTable():
 
 def loadConfig():
     if not os.path.exists(CONFIG_FILE) or os.path.getsize(CONFIG_FILE)<30:
+        if not os.access(CONFIG_FILE,os.W_OK):
+            print('Either lockwatcherd or lockwatcher-gui must first be run as root to perform some initial configuration')
+            sys.exit()
+        fd = open(CONFIG_FILE, 'w')
+        fd.close()
+        if os.geteuid() == 0:
+            os.chmod(CONFIG_FILE, 438) #rw-rw-rw-
+        
         config = configparser.ConfigParser()
         config.add_section('TRIGGERS')
         trig = config['TRIGGERS']
@@ -161,19 +149,19 @@ def loadConfig():
         trig['kbd_kill_combo_1_txt']=''
         trig['kbd_kill_combo_2']=''
         trig['kbd_kill_combo_2_txt']=''
+        trig['keyboard_device']='None'
         trig['low_temp']='21'
         trig['lockedtriggers']='E_DEVICE,E_NETCABLE,E_CHASSIS_MOTION,E_ROOM_MOTION,E_NET_CABLE_IN,E_NET_CABLE_OUT,E_KILL_SWITCH_2'
         trig['alwaystriggers']='E_KILL_SWITCH_1'
         trig['dismount_tc']='False'
         trig['dismount_dm']='False'
         trig['exec_shellscript']='False'
+        trig['script_timeout']='5'
         trig['adapterconids']=''
         trig['adapterdisconids']=''
         trig['tc_path']=''
-        trig['logfile']=''
-        trig['immediatestart']='False'
+        trig['logfile']='/var/log/lockwatcher'
         trig['daemonport']='22191'
-        trig['lockprogram']='None'
         
         config.add_section('CAMERAS')
         cameras = config['CAMERAS']
@@ -186,6 +174,7 @@ def loadConfig():
         cameras['room_fps']='10'
         cameras['room_threshold']='10000'
         cameras['room_savepicture']='True'
+        cameras['image_path']='/tmp'
         
         config.add_section('EMAIL')
         email = config['EMAIL']
@@ -204,8 +193,6 @@ def loadConfig():
         
         config.add_section('KEYBOARD')
         config['KEYBOARD']['MAP'] = 'None'
-        
-        writeConfig()
     else:    
         config = configparser.ConfigParser()
         config.read(CONFIG_FILE)
@@ -227,27 +214,28 @@ if not os.path.exists('/etc/lockwatcher/keymap') and os.geteuid() == 0:
         config['KEYBOARD']['MAP'] = mapfile
         writeConfig()
 
-def getLockProgram(deskEnv):
-
-    if deskEnv == 'ksmserver':
-        if os.path.exists('/usr/lib/kde4/libexec/kscreenlocker'):
+#there must be a better way
+def getLockProgram():
+    if os.access('/usr/lib/kde4/libexec/kscreenlocker', os.X_OK):
             return '/usr/lib/kde4/libexec/kscreenlocker --force'
-        elif os.path.exists('/usr/lib/kde4/libexec/kscreenlocker_greet'):
+    elif os.access('/usr/lib/kde4/libexec/kscreenlocker_greet', os.X_OK):
             return '/usr/lib/kde4/libexec/kscreenlocker_greet'
+    elif os.access('/usr/bin/gnome-screensaver-command', os.X_OK):
+            return '/usr/bin/gnome-screensaver-command -l'
+    elif os.access('/usr/bin/xscreensaver-command', os.X_OK):
+            return '/usr/bin/xscreensaver-command -lock'   
+    elif os.access('/usr/bin/mate-screensaver-command', os.X_OK):
+            return '/usr/bin/mate-screensaver-command -l'   
     else: 
-        print('no lock program found')
-        return 'None'
-    
+        print('No lock program found - cannot force lock activation')
+        return None
 
-#find the lock program to watch for/activate, as well as the user to activate it with
-sp = subprocess.Popen(['/usr/bin/pgrep','-xl', '"gnome-session|ksmserver|lxsession|mate-session|xfce4-session"'],stdout=subprocess.PIPE)
+#find the UID to use with the dbus
+DESK_UID = None
+sp = subprocess.Popen(['/usr/bin/pgrep','-xl', 'gnome-session|ksmserver|lxsession|mate-session|xfce4-session'],stdout=subprocess.PIPE)
 out = sp.communicate()
 results = out[0].decode('UTF-8')
-if results == '':
-    print('No desktop environment detected, cannot monitor for lock changes')
-    DBUSSUPPORTED = False
-    DESK_UID = None
-else:
+if results != '':
     processes = results.split('\\n')
     if len(processes) > 1 and processes[-1] == '':
         del processes[-1]
@@ -263,10 +251,27 @@ else:
     for ln in open('/proc/%d/status' % int(pid)):
         if ln.startswith('Uid:'):
             DESK_UID = int(ln.split()[1])
-            break
+            break 
+
+#find the lock program to activate
+if os.geteuid() == 0:
+    LOCKCMD = None
+    lockCmdFile = '/etc/lockwatcher/lockcmd'
+    if os.path.exists(lockCmdFile):
+        fd = open(lockCmdFile)
+        cmd = fd.read().split(' ')[0]
+        fd.close()
+        if os.access(lockCmdFile, os.X_OK):
+            LOCKCMD = cmd
     
-    config['TRIGGERS']['lockprogram'] = getLockProgram(deskenv.strip())
-    writeConfig()
+    if LOCKCMD == None:
+        LOCKCMD = getLockProgram()
+        if LOCKCMD != None:
+            fd = open(lockCmdFile,'w')
+            fd.write(LOCKCMD)
+            fd.close()
+
+
             
 
 
