@@ -56,8 +56,7 @@ DMUSED = True
 def unmountEncrypted():
     #doesnt seem to have purge or wipecache options on linux
     if os.path.exists(fileconfig.config['TRIGGERS']['tc_path']):
-        tc = subprocess.Popen("/usr/bin/truecrypt --dismount --force", shell=True, timeout=2)
-        tc.wait()
+        subprocess.call(["/usr/bin/truecrypt","--dismount","--force"], shell=True, timeout=2)
     
     if fileconfig.config['TRIGGERS']['dismount_dm'] == 'True':
         devlist = os.listdir('/dev/mapper')
@@ -65,9 +64,8 @@ def unmountEncrypted():
             if 'crypt' in dev: #can parallelise this a bit
                 #not sure how best to do this - area is in use so cryptsetup fails, does dmsetup clear key?
                 try:
-                    subprocess.Popen("/sbin/cryptsetup remove crypt", shell=True, timeout=1)
-                    dmr = subprocess.Popen("/sbin/dmsetup remove -f crypt", shell=True, timeout=2)
-                    dmr.wait()
+                    subprocess.call(["/sbin/cryptsetup","remove","crypt"], shell=True, timeout=1)
+                    subprocess.call(["/sbin/dmsetup","remove","-f","crypt"], shell=True, timeout=2)
                 except: continue
         
 
@@ -108,10 +106,10 @@ def emergency(device=None):
         unmountEncrypted() 
         
         if config['TRIGGERS']['exec_shellscript'] == 'True':
-            scriptProcess = subprocess.Popen(".\sd.sh", shell=True, timeout=config['TRIGGERS']['script_timeout'])
-            scriptProcess.wait()
+            subprocess.call("/etc/lockwatcher/sd.sh", shell=True, timeout=int(config['TRIGGERS']['script_timeout']))
+
     except:
         pass
     
-    os.system('/sbin/poweroff -f')
+    subprocess.call(['/sbin/poweroff','-f'])
     

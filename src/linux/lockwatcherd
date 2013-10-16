@@ -55,7 +55,7 @@ def eventHandle(event_type,eventReason):
 
 #handler for pyudev device events
 def device_changed(action,device):
-    eventHandle('E_DEVICE',"Device event trigger. Device: %s, Event: %s"%(device,action))
+    eventHandle('E_DEVICE',"Device event trigger. Event: %s, Device: %s"%(action,device))
 
 #handler for dbus screensaver activity
 def scrnLocked(state):

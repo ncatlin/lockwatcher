@@ -107,9 +107,16 @@ def trigStateChange(combo):
 
 #generate a keycode->keyname mapping
 def generateKCodeTable():
+    for path in ['/bin/dumpkeys','/usr/bin/dumpkeys','/usr/local/bin/dumpkeys']:
+        if os.access(path, os.X_OK):
+            dkPath = path
+            break
+    else:
+        dkPath = None
+        
     try:
         #needs root, sadly
-        outp = subprocess.check_output(["/bin/dumpkeys", "--keys-only"]).decode('UTF-8')
+        outp = subprocess.check_output([dkPath, "--keys-only"]).decode('UTF-8')
     except:
         e = sys.exc_info()
         print('kcodegen exception %s'%str(e))

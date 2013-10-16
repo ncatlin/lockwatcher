@@ -44,21 +44,18 @@ def getMouseDevices():
 
 #gets the /dev/videoX strings and device/manufacturer names for all the cameras
 #returns them in a dict
+#had to change from popen->communicate to check_output because debian is still on py 3.2
 def getCamNames():
     cameranames = {}
     videodevs = ['/dev/%s'%dev for dev in os.listdir('/dev') if 'video' in dev]
     for dev in videodevs:
         cameranames[dev] = {}
-        scanprocess = subprocess.Popen(['/sbin/udevadm','info', '--query=property','-n','%s'%dev], stdout=subprocess.PIPE)
-        if scanprocess == []:
-            return None
         try:
-            out, err = scanprocess.communicate(timeout=30)
-        except subprocess.TimeoutExpired:
-            scanprocess.kill()
-            out, err = scanprocess.communicate()
+            output = subprocess.check_output(['/sbin/udevadm','info', '--query=property','-n','%s'%dev])
+        except:
+            continue
         
-        for detail in out.decode('UTF-8').split('\n'):
+        for detail in output.decode('UTF-8').split('\n'):
             if 'ID_MODEL=' in detail:
                 cameranames[dev]['ID_MODEL'] = detail.split('=')[1]
                 continue
@@ -86,81 +83,7 @@ def scrnLocked(state):
     if state == 1:s.send(b'LockTrue')
     else: s.send(b'LockFalse')
 
-'''
-#cannot interact with user screen as root,
-#make new process to do it
-def lockMonitorProcess(uid,q):
-        if os.getuid()==0:
-            os.setuid(uid)
 
-        #this isnt great, there are a few different lock implementations floating around
-        #lubuntu switching from xscreensaver-command to lightdm from locking next release
-        if lwconfig.DBUSSUPPORTED == True:
-            session_bus = dbus.SessionBus(mainloop=DBusGMainLoop())
-            #subscribe to kde and gnome lock notification signals
-            session_bus.add_signal_receiver(scrnLocked,'ActiveChanged','org.freedesktop.ScreenSaver')
-            session_bus.add_signal_receiver(scrnLocked,'ActiveChanged','org.gnome.ScreenSaver')
-            GObject.MainLoop().run()
-        else:
-            if fileconfig.config['TRIGGERS']['desktop_env'] == 'LXDE':
-                try:
-                    currentState = ('locked' in str(subprocess.check_output(["/usr/bin/xscreensaver-command", "-time"])))
-                except subprocess.CalledProcessError:
-                    print("Screen status not set - lock screen once before running lockwatcher")
-                    currentState = False
-                while True:
-                    time.sleep(1)
-                    
-                    try:
-                        outp = subprocess.check_output(["/usr/bin/xscreensaver-command", "-time"])
-                    except subprocess.CalledProcessError:
-                        continue
-                    
-                    if 'locked' in str(outp):
-                        if currentState == False:
-                            currentState = True
-                            scrnLocked(1)
-                    else:
-                        if currentState == True:
-                            currentState = False
-                            scrnLocked(0)
- '''               
-            
-'''      
-#put this in a thread to stop it blocking everything else
-#this also stops keyboard interrupts from closing the program
-class lockMonitor(threading.Thread):
-    def __init__(self,user):
-        threading.Thread.__init__(self)
-        self.name = "LockMonThread"
-        self.user = user
-    def run(self):
-        lockQueue = multiprocessing.Queue()
-        p = multiprocessing.Process(target=lockMonitorProcess,args=(self.user,lockQueue))
-        p.daemon = True
-        p.start()
-        
-        pidfd = open('/var/run/lockpid','w')
-        pidfd.write(str(p.pid))
-        pidfd.close()
-        #i dont like using sockets here but queues often lost
-        #values in transit and left the system in an inconsistent state
-        #bug to be fixed
-        try:
-            s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
-            s.bind(('127.0.0.1',22190))
-        except:
-            printMessage('Could not bind to 127.0.0.1:22190, please kill any other lockwatchers and try again')
-            eventQueue.put(('fatalerror',None))
-            return
-        
-        while True:
-            result = s.recv(5)
-            if result == b'True': result = True
-            elif result == b'False': result = False
-            eventQueue.put(('lock',result))
-'''           
-            
 #import sensors
 #lack of access to DIMM SPD data means this only checks motherboard
 #
