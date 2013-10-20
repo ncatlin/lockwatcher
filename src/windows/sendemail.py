@@ -11,9 +11,10 @@ from socket import gaierror
 
 from fileconfig import config
 
-#use a HMAC to prevent impersonation/replay
-secret = bytes(config['EMAIL']['EMAIL_SECRET'],'UTF-8')
 def validHMAC(code,command):
+            #use a HMAC to prevent impersonation/replay
+            secret = config.get('EMAIL','EMAIL_SECRET')
+            
             timenow = time.strftime('%d%m%Y%H%M') #day,month,year,hour,minute
             validTimes = (str(int(timenow)-1),timenow,str(int(timenow)+1)) #1 minute leeway
             
@@ -33,9 +34,9 @@ def validHMAC(code,command):
 
 def doSend(msg):
     try:
-        s = smtplib.SMTP(config['EMAIL']['email_smtp_host'],timeout=4)
-        s.login(config['EMAIL']['email_username'], config['EMAIL']['email_password'])
-        s.sendmail(msg['To'],config['EMAIL']['alert_email_address'], msg.as_string())
+        s = smtplib.SMTP(config.get('EMAIL','email_smtp_host'),timeout=4)
+        s.login(config.get('EMAIL','email_username'), config.get('EMAIL','email_password'))
+        s.sendmail(msg['To'],config.get('EMAIL','alert_email_address'), msg.as_string())
         print('Email Sent')
         return True  
     except gaierror:
@@ -60,7 +61,7 @@ def sendEmail(subject,message,attachment=None):
         msg.attach(part)
         
     msg['Subject'] = subject
-    msg['From'] = config['EMAIL']['COMMAND_EMAIL_ADDRESS']
-    msg['To'] = config['EMAIL']['ALERT_EMAIL_ADDRESS']
+    msg['From'] = config.get('EMAIL','COMMAND_EMAIL_ADDRESS')
+    msg['To'] = config.get('EMAIL','ALERT_EMAIL_ADDRESS')
     
     doSend(msg)

@@ -3,17 +3,18 @@
 
 Various config file handling routines
 '''
-import configparser, os
+import ConfigParser, os 
 
 TRIG_LOCKED = 0
 TRIG_ALWAYS = 1
 TRIG_NEVER = 2
 
-CONFIG_FILE = 'C:\\Users\\UserX\\workspace\\workspace3\\lockwatchwin\\lockwatcher.ini'
+CONFIG_FILE = os.path.join(os.getcwd(),'lockwatcher.ini')
+config = None
 
 def writeConfig():
-    with open(CONFIG_FILE, 'w') as configfile:
-            config.write(configfile,space_around_delimiters=False)
+    with open(CONFIG_FILE, 'wb') as configfile:
+            config.write(configfile)#,space_around_delimiters=False)
             
 def checkBtnChanged(btn):
 
@@ -96,46 +97,50 @@ def trigStateChange(combo):
     writeConfig()
 
 def loadConfig():
-    if not os.path.exists(CONFIG_FILE):
-        config = configparser.ConfigParser()
+    if not os.path.exists(CONFIG_FILE) or os.path.getsize(CONFIG_FILE)<20:
+        global config
+        config = ConfigParser.ConfigParser()
         config.add_section('TRIGGERS')
-        trig = config['TRIGGERS']
-        trig['bluetooth_device_id']=''
-        trig['kbd_kill_combo_1']=''
-        trig['kbd_kill_combo_2']=''
-        trig['low_temp']='21'
-        trig['lockedtriggers']='E_DEVICE,E_NETCABLE,E_CHASSIS_MOTION,E_ROOM_MOTION,E_NET_CABLE_IN,E_NET_CABLE_OUT,E_KILL_SWITCH_2'
-        trig['alwaystriggers']='E_KILL_SWITCH_1'
-        trig['dismount_tc']='False'
-        trig['exec_shellscript']='False'
-        trig['adapterconguids']=''
-        trig['adapterdisconguids']=''
-        trig['ballistix_log_file']=''
-        trig['tc_path']=''
-        trig['ispy_path']=''
-        trig['room_cam_id']=''
-        trig['logfile']=''
-        trig['immediatestart']='False'
+        config.set('TRIGGERS','bluetooth_device_id','')
+        config.set('TRIGGERS','bluetooth_device_id','')
+        config.set('TRIGGERS','kbd_kill_combo_1','')
+        config.set('TRIGGERS','kbd_kill_combo_2','')
+        config.set('TRIGGERS','low_temp','21')
+        config.set('TRIGGERS','lockedtriggers','E_DEVICE,E_NETCABLE,E_CHASSIS_MOTION,E_ROOM_MOTION,E_NET_CABLE_IN,E_NET_CABLE_OUT,E_KILL_SWITCH_2')
+        config.set('TRIGGERS','alwaystriggers','E_KILL_SWITCH_1')
+        config.set('TRIGGERS','dismount_tc','False')
+        config.set('TRIGGERS','exec_shellscript','False')
+        config.set('TRIGGERS','adapterconguids','')
+        config.set('TRIGGERS','adapterdisconguids','')
+        config.set('TRIGGERS','ballistix_log_file','')
+        config.set('TRIGGERS','tc_path','')
+        config.set('TRIGGERS','ispy_path','')
+        config.set('TRIGGERS','room_cam_id','')
+        config.set('TRIGGERS','logfile','')
+        config.set('TRIGGERS','immediatestart','False')
         
         config.add_section('EMAIL')
-        email = config['EMAIL']
         
-        email['email_alert']='False'
-        email['email_imap_host']='imap.changeme.domain'
-        email['email_smtp_host']='smtp.changeme.domain'
-        email['email_username']='changeme'
-        email['email_password']='changeme'
-        email['email_secret']='changeme'
-        email['bad_command_limit']='3'
-        email['enable_remote']='False'
-        email['email_motion_picture']='False'
-        email['alert_email_address']='changeme@mail.domain'
-        email['command_email_address']='yourpc@mail.domain'
+        config.set('EMAIL','email_alert','False')
+        config.set('EMAIL','email_imap_host','imap.changeme.domain')
+        config.set('EMAIL','email_smtp_host','smtp.changeme.domain')
+        config.set('EMAIL','email_username','changeme')
+        config.set('EMAIL','email_password','changeme')
+        config.set('EMAIL','email_secret','changeme')
+        config.set('EMAIL','bad_command_limit','3')
+        config.set('EMAIL','enable_remote','False')
+        config.set('EMAIL','email_motion_picture','False')
+        config.set('EMAIL','alert_email_address','changeme@mail.domain')
+        config.set('EMAIL','command_email_address','yourpc@mail.domain')
         writeConfig()
     else:    
-        config = configparser.ConfigParser()
+        config = ConfigParser.ConfigParser()
         config.read(CONFIG_FILE)
         
     return config
 
+
 config = loadConfig()
+def reloadConfig():
+    global config
+    config = loadConfig()

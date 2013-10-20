@@ -10,7 +10,7 @@ and trigger the antiforensic module if the screen is locked
 import AFroutines
 import fileconfig, hardwareconfig, sendemail, winsockbtooth
 
-import threading, queue, subprocess
+import threading, Queue, subprocess
 import select
 import os,time,datetime
 import imapclient
@@ -25,20 +25,20 @@ lockedStateText = {True:'Locked',False:'Not Locked'}
 def eventHandle(event_type,eventReason):
     locked = hardwareconfig.checkLock()
     
-    if (event_type in fileconfig.config['TRIGGERS']['ALWAYSTRIGGERS'].split(',')) or \
-        (event_type in fileconfig.config['TRIGGERS']['LOCKEDTRIGGERS'].split(',') and locked == True):
+    if (event_type in fileconfig.config.get('TRIGGERS','ALWAYSTRIGGERS').split(',')) or \
+        (event_type in fileconfig.config.get('TRIGGERS','LOCKEDTRIGGERS').split(',') and locked == True):
         eventQueue.put(("Log","[%s - *Trigger activated*]. %s"%(lockedStateText[locked],eventReason)))
         eventQueue.put(("Kill",eventReason))
     else:
         '''log the ignored trigger (but not the 2nd killswitch because a logfile containing
         every press of the letter 'p' is going to be a mess)'''
-        if event_type != 'E_KILL_SWITCH_2':
+        if event_type not in  ['E_MOUSE_MOVE','E_MOUSE_BTN','E_KILL_SWITCH_2']:
             eventQueue.put(("Log","[%s - Trigger ignored]. %s"%(lockedStateText[locked],eventReason)))
     
 #running as a service makes exception handling more difficult
 #write log directly instead of relying on eventqueue processing    
 def debugLog(msg):
-    logPath = fileconfig.config['TRIGGERS']['logfile']
+    logPath = fileconfig.config.get('TRIGGERS','logfile')
     try:
         fd = open(logPath,'a+')
         fd.write(time.strftime('[%x %X]')+str(msg)+'\n') 
@@ -199,8 +199,8 @@ class LogicalDeviceMonitor(threading.Thread):
 
 #logs in to specified imap server and selects the inbox
 def setupIMAP():
-    server = imapclient.IMAPClient(fileconfig.config['EMAIL']['email_imap_host'], use_uid=False, ssl=True)
-    server.login(fileconfig.config['EMAIL']['email_username'], fileconfig.config['EMAIL']['email_password'])
+    server = imapclient.IMAPClient(fileconfig.config.get('EMAIL','email_imap_host'), use_uid=False, ssl=True)
+    server.login(fileconfig.config.get('EMAIL','email_username'), fileconfig.config.get('EMAIL','email_password'))
     server.select_folder('INBOX')
     return server
 
@@ -234,7 +234,7 @@ class emailMonitor(threading.Thread):
             return
         
         eventQueue.put(("Status",'email','Active'))
-        self.running = True
+
         while self.running == True:
             #refresh the connection every 14 mins so it doesnt timeout
             try:
@@ -249,6 +249,8 @@ class emailMonitor(threading.Thread):
                     server.idle()
                     connectionFails = 0
                 except:
+                    if self.running == False: break
+                    
                     eventQueue.put(("Status",'email','Attempting reconnect attempt %s'%(connectionFails)))
                     time.sleep(connectionFails * 3)
                     connectionFails += 1
@@ -271,7 +273,7 @@ class emailMonitor(threading.Thread):
             server.idle()
             keys = keys[seqid]['ENVELOPE']
             addressee = keys[2][0][2]
-            intendedAddressee = fileconfig.config['EMAIL']['command_email_address'].split('@')[0]
+            intendedAddressee = fileconfig.config.get('EMAIL','command_email_address').split('@')[0]
             if addressee == intendedAddressee:
                 eventQueue.put(("Mail",keys[1]))
             else:
@@ -302,7 +304,7 @@ class RAMMonitor(threading.Thread):
         eventQueue.put(("Status",'ram',"Active"))
         while self.running == True:
             try:
-                csvfile = open(fileconfig.config['TRIGGERS']['BALLISTIX_LOG_FILE'],mode='rb')
+                csvfile = open(fileconfig.config.get('TRIGGERS','BALLISTIX_LOG_FILE'),mode='rb')
             except IOError as e:
                 if e.errno == 2:
                     print("Unable to open Ballistix MOD Log file: %s. Cannot monitor RAM temperature."%e)
@@ -314,7 +316,7 @@ class RAMMonitor(threading.Thread):
             line = csvfile.readline()
             csvfile.close()
             RAMTemp = line.decode("utf-8").split(',')[2]
-            if float(RAMTemp) <= float(fileconfig.config['TRIGGERS']['low_temp']):  
+            if float(RAMTemp) <= float(fileconfig.config.get('TRIGGERS','low_temp')):  
                 eventHandle('E_TEMPERATURE',"Low RAM temperature")
             time.sleep(1) #the MOD logger only writes once per second
             
@@ -360,7 +362,7 @@ class BTMonitor(threading.Thread):
         self.running = True
         eventQueue.put(("Status",'bluetooth','Connecting to device...'))
 
-        deviceIDStr = fileconfig.config['TRIGGERS']['bluetooth_device_id']
+        deviceIDStr = fileconfig.config.get('TRIGGERS','bluetooth_device_id')
         deviceID = hardwareconfig.BTStrToHex(deviceIDStr)
         
         error, result = winsockbtooth.connect(deviceID)
@@ -554,6 +556,10 @@ class configMonitor(threading.Thread):
                 eventQueue.put(('getStatuses',None))
             elif command == 'startMonitor' or command == 'stopMonitor':
                 eventQueue.put((command,value))
+            elif command == 'reloadConfig':
+                eventQueue.put(('reloadConfig',None))
+            else:
+                eventQueue.put(('Log','Bad local command received: %s'%command))
        
     def terminate(self):
         self.running = False
@@ -570,32 +576,47 @@ class keyboardMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.name = 'KeyboardMonitor'
-    def run(self):
-        primaryKillKeys = {}
-        for key in fileconfig.config['TRIGGERS']['kbd_kill_combo_1'].split('+'):
-            primaryKillKeys[int(key)] = False
-            
-        secondaryKillKeys = {}
-        for key in fileconfig.config['TRIGGERS']['kbd_kill_combo_2'].split('+'):
-            secondaryKillKeys[int(key)] = False
-        
-        keyQueue = queue.Queue()
+    def run(self):  
+        keyQueue = Queue.Queue()
         self.hookListener = hardwareconfig.kbdHookListenThread(keyQueue)
         self.hookListener.start()
         self.interceptListener = hardwareconfig.interceptListenThread(keyQueue)
         self.interceptListener.start()
         
+        self.reloadKeys = True
         self.running = True
         eventQueue.put(("Status",'killSwitch',"Active"))
         while self.running == True:
+            if self.reloadKeys == True:
+                primaryKillKeys = {}
+                for key in fileconfig.config.get('TRIGGERS','kbd_kill_combo_1',0).split('+'):
+                    if key == '': break
+                    primaryKillKeys[int(key)] = False
+                    
+                
+                secondaryKillKeys = {}
+                for key in fileconfig.config.get('TRIGGERS','kbd_kill_combo_2').split('+'):
+                    if key == '': break
+                    secondaryKillKeys[int(key)] = False
+                self.reloadKeys = False
+            
             try:
                 eventType,eventDetails = keyQueue.get(True,1)
+                #print('event: %s details:%s in kbd/mouse queue'%(eventType,eventDetails))
             except: 
                 if self.running == False: break
                 continue
             
-            key = eventDetails[0]
-
+            if eventType == 'mouse':
+                if eventDetails == 'Moved':
+                    eventHandle('E_MOUSE_MOVE',"Mouse moved")
+                elif eventDetails == 'Button':
+                    eventHandle('E_MOUSE_BTN',"Mouse button pressed")
+                continue
+            else:      
+                key = eventDetails[0]
+        
+            
             if key in primaryKillKeys.keys(): 
                 primaryKillKeys[key] = eventType
             if key in secondaryKillKeys.keys(): 
@@ -611,6 +632,10 @@ class keyboardMonitor(threading.Thread):
             else: eventHandle('E_KILL_SWITCH_2',"Kill switch 2 pressed")
                             
         eventQueue.put(("Status",'killSwitch',"Not Running"))
+        
+    def reloadConfig(self):
+        self.reloadKeys = True
+    
     def terminate(self):
         self.running = False
         self.hookListener.stop()
@@ -635,8 +660,8 @@ def executeRemoteCommand(command):
             
     elif command == REMOTE_STARTMONITOR:
         #cant check ispy camera status, just have to assume it was not monitoring
-        iSpyPath = fileconfig.config['TRIGGERS']['ispy_path']
-        roomCamID = fileconfig.config['TRIGGERS']['room_cam_id']
+        iSpyPath = fileconfig.config.get('TRIGGERS','ispy_path')
+        roomCamID = fileconfig.config.get('TRIGGERS','room_cam_id')
         eventQueue.put(("Log","Starting room camera after remote command"))
         subprocess.call([iSpyPath,'commands bringonline,2,%s'%roomCamID])
         sendemail.sendEmail("Command successful","Movement monitoring initiated. Have a nice day.")
@@ -644,8 +669,8 @@ def executeRemoteCommand(command):
         
     elif command == REMOTE_STOPMONITOR:
         #cant check ispy camera status, just have to assume it was already monitoring
-        iSpyPath = fileconfig.config['TRIGGERS']['ispy_path']
-        roomCamID = fileconfig.config['TRIGGERS']['room_cam_id']
+        iSpyPath = fileconfig.config.get('TRIGGERS','ispy_path')
+        roomCamID = fileconfig.config.get('TRIGGERS','room_cam_id')
         eventQueue.put(("Log","Stopping room camera after remote command"))
         subprocess.call([iSpyPath,'commands takeoffline,2,%s'%roomCamID])
         sendemail.sendEmail("Command successful","Movement monitoring disabled. Welcome home!")
@@ -740,14 +765,29 @@ def broadcast(listeners,msg):
     
     for connection in badConnections:
         listeners.remove(connection)
-             
 
+def addLogEntry(msg,listeners):
+    entry = time.strftime('[%x %X] ')+msg+'\n'
+    logPath = fileconfig.config.get('TRIGGERS','logfile')
+    try:
+        fd = open(logPath,'a+')
+        fd.write(entry) 
+        fd.close()
+    except:
+        servicemanager.LogErrorMsg(entry)
+    
+    broadcast(listeners,'Log::'+entry)   
+    
+def printeq():
+    plog('eqp == %s'%eventQueue)
+        
 class lockwatcher(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.name = 'Lockwatcher'
     def run(self):
         
+        plog('in lw run')
         #send log/status updates to connections in here - for config programs
         listeners = []
         
@@ -755,12 +795,16 @@ class lockwatcher(threading.Thread):
         cmon = configMonitor()
         cmon.start()
         
-        LOCKED = fileconfig.config['TRIGGERS']['lockedtriggers'].split(',')
-        ALWAYS = fileconfig.config['TRIGGERS']['alwaystriggers'].split(',')
+        plog('in lw run trigs1')
+        LOCKED = fileconfig.config.get('TRIGGERS','lockedtriggers').split(',')
+        ALWAYS = fileconfig.config.get('TRIGGERS','alwaystriggers').split(',')
         ACTIVE = LOCKED+ALWAYS
+        plog('in lw run trigs2')
         
         global eventQueue
-        eventQueue = queue.Queue()
+        eventQueue = Queue.Queue()
+        plog('eq == %s'%eventQueue)
+        printeq()
         
         threadStatuses = {}
         threadDict = {}
@@ -768,12 +812,12 @@ class lockwatcher(threading.Thread):
         for trigger in ACTIVE:
             if trigger != '': startMonitor(threadDict,trigger)
 
-        if fileconfig.config['EMAIL']['ENABLE_REMOTE'] == 'True':
+        if fileconfig.config.get('EMAIL','ENABLE_REMOTE') == 'True':
             startMonitor(threadDict,'email')
         
         
         #new month, new log
-        logPath = fileconfig.config['TRIGGERS']['logfile']
+        logPath = fileconfig.config.get('TRIGGERS','logfile')
         if os.path.exists(logPath):
             creationTime = time.ctime(os.path.getctime(logPath))
             creationMonth = datetime.datetime.strptime(creationTime, "%a %b %d %H:%M:%S %Y")
@@ -798,7 +842,7 @@ class lockwatcher(threading.Thread):
                 if shutdownActivated == False: 
                     shutdownActivated = True
                     
-                    if fileconfig.config['EMAIL']['email_alert'] == 'True' and \
+                    if fileconfig.config.get('EMAIL','email_alert') == 'True' and \
                         'Kill switch' not in eventReason:
                         try:
                             #has a 4 second timeout for blocking operations
@@ -826,17 +870,7 @@ class lockwatcher(threading.Thread):
             #--------------add to log file + listener log window if they exist
             elif eventType == 'Log':
                 #if self.msgAdd != None: self.msgAdd(event[1])
-                
-                entry = time.strftime('[%x %X] ')+event[1]+'\n'
-                logPath = fileconfig.config['TRIGGERS']['logfile']
-                try:
-                    fd = open(logPath,'a+')
-                    fd.write(entry) 
-                    fd.close()
-                except:
-                    servicemanager.LogErrorMsg(event[1])
-                
-                broadcast(listeners,'Log::'+entry)
+                addLogEntry(str(event[1]),listeners)
                 
             elif eventType == 'stop':
                 broadcast(listeners,'Shutdown')
@@ -897,18 +931,21 @@ class lockwatcher(threading.Thread):
                     badCommands += 1
                     sendemail.sendEmail("Command failed","Bad command or authentication code received: %s"%str(event[1]))
                     eventQueue.put(('Log','Mail not authenticated or bad command: %s'%str(event[1])))
-                    badCommandLimit = int(fileconfig.config['EMAIL']['BAD_COMMAND_LIMIT'])
+                    badCommandLimit = int(fileconfig.config.get('EMAIL','BAD_COMMAND_LIMIT'))
                     if badCommandLimit > 0 and badCommands >= badCommandLimit:
-                        #todo: fixme
-                        self.msgAdd('Emergency shutdown: Too many bad remote commands')
+                        addLogEntry(str(event[1]),listeners)
                         
                         if shutdownActivated == False:
+                            shutdownActivated = True
                             AFroutines.emergency()
                             
                     continue
             elif eventType == 'reloadConfig':
-                fileconfig.loadConfig()     
+                fileconfig.reloadConfig()
+                if 'keyboardMonitor' in threadDict.keys() and threadDict['keyboardMonitor'].is_alive() == True:
+                    threadDict['keyboardMonitor'].reloadConfig()
                 eventQueue.put(('Log','Configreload forced'))  #debugmode
+                
                 
             elif eventType == 'newListener':
                 port = int(event[1])
@@ -937,73 +974,35 @@ def createLockwatcher():
         
     monitorThread = lockwatcher()
     
-    
-import win32serviceutil
-import win32service
-import win32event
-import servicemanager   
-
-def plog(sf):
-        fd = open(fileconfig.config['TRIGGERS']['logfile'],'a+')
-        fd.write(time.strftime('[%x %X] ')+str(sf)+'\n') 
-        fd.close()
-
-class lockwatcherSvc (win32serviceutil.ServiceFramework):
-    _svc_name_ = "LockWatcherSvc"
-    _svc_display_name_ = "Lockwatcher"
-
-    def __init__(self,args):
-        win32serviceutil.ServiceFramework.__init__(self,args)
-        self.hWaitStop = win32event.CreateEvent(None,0,0,None)
+import cx_Logging #here so cx_Freeze adds the .pyd for sm.exe to use
+import servicemanager
+ 
+class lockwatcherSvc (object):
+    def __init__(self):
         socket.setdefaulttimeout(60)
         self.running = True
         
-    def GetAcceptedControls(self):
-        # Accept SESSION_CHANGE control
-        rc = win32serviceutil.ServiceFramework.GetAcceptedControls(self)
-        rc |= win32service.SERVICE_ACCEPT_SESSIONCHANGE
-        return rc
+    def Initialize(self, configFileName):
+        pass
 
-
-    def SvcOtherEx(self, control, event_type=None, data=None):
-        # This is only showing a few of the extra events - see the MSDN
-        # docs for "HandlerEx callback" for more info.
-        '''
-        if control == win32service.SERVICE_CONTROL_SESSIONCHANGE:
-            sess_id = data[0]
-            msg = "Other session event: type=%s, sessionid=%s\n" % (event_type, sess_id)
-            
-        '''
+    def SessionChanged(self, sessionID, event_type):
         SESSION_LOCK = 0x7
         SESSION_UNLOCK = 0x8
         
-        if control == 14: #session_change
-            if event_type == SESSION_LOCK:
+        if event_type == SESSION_LOCK:
                 hardwareconfig.lockState = True
-            elif event_type == SESSION_UNLOCK:
+        elif event_type == SESSION_UNLOCK:
                 hardwareconfig.lockState = False
-            else: return
+        else: return
             
-        elif control == 1: 
-            self.SvcStop()
-            
-        else:
-            fd = open(fileconfig.config['TRIGGERS']['logfile'],'a+')
-            fd.write(time.strftime('[%x %X]')+ 'unknown event %s %s %s\n'%(control, event_type,data)) 
-            fd.close()
-            
-    def SvcStop(self):
-        #self.running = False
+    def Stop(self):
         monitorThread.stop('Service Stop')
-        self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
-        win32event.SetEvent(self.hWaitStop)
 
-    def SvcDoRun(self):
-        self.ReportServiceStatus(win32service.SERVICE_RUNNING)
+    def Run(self):
         servicemanager.LogMsg(servicemanager.EVENTLOG_INFORMATION_TYPE,
                               servicemanager.PYS_SERVICE_STARTED,
-                              (self._svc_name_,''))
-
+                              ('Lockwatcher',''))
+        plog('starting service: Run')
         try:
             self.main()
         except:
@@ -1013,22 +1012,12 @@ class lockwatcherSvc (win32serviceutil.ServiceFramework):
         createLockwatcher()
         monitorThread.start()
         while monitorThread.is_alive() == True:
-            time.sleep(2)
+            time.sleep(2) 
 
-#uninstalls and reinstalls service
-#call with False to just uninstall
-def installService(install=True):
-    
-        cls = lockwatcherSvc
+def plog(sf):
+        fd = open(fileconfig.config.get('TRIGGERS','logfile'),'a+')
         try:
-            win32serviceutil.RemoveService( cls._svc_name_)
-        except: pass
-        
-        if install == True:
-            serviceName = cls._svc_name_
-            serviceDisplayName = cls._svc_display_name_
-            serviceClassString = win32serviceutil.GetServiceClassString(cls)
-                
-            win32serviceutil.InstallService(serviceClassString, serviceName, serviceDisplayName, 
-                                            startType=win32service.SERVICE_DEMAND_START,  
-                                            exeName='pythonservice.exe', description='Monitors for possible tampering and reacts accordingly')
+            fd.write(time.strftime('[%x %X] ')+str(sf)+'\n') 
+            fd.close()
+        except:
+            pass

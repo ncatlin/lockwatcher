@@ -2,7 +2,6 @@
 @author: Nia Catlin
 
 This was not fun to write
-
 TODO:Get scanning for listening devices to work
 '''
 import ctypes

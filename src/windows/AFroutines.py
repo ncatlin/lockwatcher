@@ -20,15 +20,18 @@ def emergency():
     
     #truecrypt forces volume dismount and discards any key data
     if fileconfig.config['TRIGGERS']['dismount_tc'] == 'True':
-        tcPath  = fileconfig.config['TRIGGERS']['tc_path']
+        tcPath  = fileconfig.config.get('TRIGGERS','tc_path')
         try:
             subprocess.call([tcPath,"/dismount","/force","/wipecache","/quit","/silent"])
         except: pass 
     
-    if fileconfig.config['TRIGGERS']['exec_shellscript'] == 'True':
+    if fileconfig.config.get('TRIGGERS','exec_shellscript') == 'True':
         try:
             scriptPath = os.getcwd()+'\sd.bat'
-            if os.path.exists(scriptPath): subprocess.call([scriptPath])
+            if os.path.exists(scriptPath): 
+                timeLimit = fileconfig.config.get('TRIGGERS','script_timeout')
+                scriptProcess = subprocess.Popen(scriptPath,shell=True,timeout=timeLimit)
+                scriptProcess.wait()
         except: pass
     
     #shutdown: force application close, no timeout

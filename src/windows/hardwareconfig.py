@@ -15,7 +15,7 @@ lockState = False
 def checkLock(): return lockState
 
 
-import queue
+import Queue
 from interception import *
 class interceptListenThread(threading.Thread):
     def __init__(self,keyQueue):
@@ -26,16 +26,23 @@ class interceptListenThread(threading.Thread):
     def run(self):
         stroke = Stroke()
         context = create_context()
-        set_filter( context, is_keyboard, FILTER_KEY_DOWN | FILTER_KEY_UP)
+        #set_filter( context, is_keyboard, FILTER_KEY_DOWN | FILTER_KEY_UP)
+        set_filter( context, is_mouse, FILTER_MOUSE_ALL)
         keyStroke = KeyStroke()
+        mouseStroke = MouseStroke()
         
         self.context = context
         self.listening = True
-        while (self.listening == True):
+        lastMoveEvent = time.time() #dont want to spam event queue with mouse moves
+        while self.listening == True:
                 device=wait_with_timeout(context,1000)
-                if receive(context, device, stroke,1) == 0: continue
+                result = receive(context, device, stroke,1) 
+                if result == 0: 
+                    if self.listening == True: continue
+                    else: break
+
                 
-                if is_keyboard( device ):
+                if is_keyboard(device):
                     stroke2KeyStroke( stroke, dest = keyStroke )
                     send(context,device, keyStroke,1)
                     if checkLock() == False: continue
@@ -46,6 +53,20 @@ class interceptListenThread(threading.Thread):
                     else: keyname = 0
                     
                     self.keyQueue.put(({0:False,1:True}[keyStroke.state],(kCode,keyname)))
+                elif is_mouse(device):
+                    stroke2MouseStroke( stroke, dest = mouseStroke )
+                    send(context,device, mouseStroke,1)
+                    
+                    mouseMoveTotal = abs(mouseStroke.x) + abs(mouseStroke.y)
+                    if mouseStroke.state != 0: 
+                        self.keyQueue.put(('mouse','Button'))
+                    elif mouseMoveTotal > 1: #implementation of sensitive mode goes here if needed
+                        timeNow = time.time()
+                        if timeNow>lastMoveEvent+1:
+                            self.keyQueue.put(('mouse','Moved'))
+                            lastMoveEvent = timeNow
+
+                    
                 else:
                     send(context,device, stroke,1)
           
@@ -53,7 +74,6 @@ class interceptListenThread(threading.Thread):
 
     def stop(self):
         self.listening = False
-
 
 class kbdHookListenThread(threading.Thread):
     def __init__(self,keyQueue):
@@ -100,7 +120,7 @@ class kbdProcessThread(threading.Thread):
         self.callback = callback
         self.name='kbdListenThread'
     def run(self):
-        keyQueue = queue.Queue()
+        keyQueue = Queue.Queue()
         
         hookListener = kbdHookListenThread(keyQueue)
         hookListener.start()
@@ -112,7 +132,7 @@ class kbdProcessThread(threading.Thread):
         while self.listening == True:
             eventType,eventDetails = keyQueue.get(True)
             if eventType == True: self.callback(eventDetails[0],eventDetails[1])
-                        
+
         if hookListener.is_alive(): hookListener.stop()
         if interceptListener.is_alive(): interceptListener.stop()
                         
@@ -189,7 +209,7 @@ class RAMMonitor(threading.Thread):
             else: startup = False
             
             try:
-                csvfile = open(fileconfig.config['TRIGGERS']['BALLISTIX_LOG_FILE'],mode='rb')
+                csvfile = open(fileconfig.config.get('TRIGGERS','BALLISTIX_LOG_FILE'),mode='rb')
                 csvfile.seek(-30, 2)
                 line = csvfile.readline()
                 csvfile.close()
@@ -240,10 +260,11 @@ class emailTestThread(threading.Thread):
         self.name='mailTestThread'
     def run(self):
         print("in email test thread")
-        if self.config['EMAIL']['EMAIL_SMTP_HOST']!= None:
+        smtpHost = self.config.get('EMAIL','EMAIL_SMTP_HOST')
+        if smtpHost != None:
             try:
-                s = smtplib.SMTP(self.config['EMAIL']['EMAIL_SMTP_HOST'], timeout=10)
-                s.login(self.config['EMAIL']['EMAIL_USERNAME'], self.config['EMAIL']['EMAIL_PASSWORD'])
+                s = smtplib.SMTP(smtpHost, timeout=10)
+                s.login(self.config.get('EMAIL','EMAIL_USERNAME'), self.config.get('EMAIL','EMAIL_PASSWORD'))
                 s.quit()
             except smtplib.SMTPAuthenticationError:
                 resultS = 'Authentication Error'
@@ -255,11 +276,12 @@ class emailTestThread(threading.Thread):
                 resultS = 'Failed'
             else:
                 resultS = 'OK'
-            
-        if self.config['EMAIL']['EMAIL_IMAP_HOST']!= None:    
+        
+        imapHost = self.config.get('EMAIL','EMAIL_IMAP_HOST')
+        if imapHost != None:    
             try:
-                server = imapclient.IMAPClient(self.config['EMAIL']['EMAIL_IMAP_HOST'], use_uid=False, ssl=True)
-                server.login(self.config['EMAIL']['EMAIL_USERNAME'], self.config['EMAIL']['EMAIL_PASSWORD'])
+                server = imapclient.IMAPClient(imapHost, use_uid=False, ssl=True)
+                server.login(self.config.get('EMAIL','EMAIL_USERNAME'), self.config.get('EMAIL','EMAIL_PASSWORD'))
                 server.select_folder('INBOX')
                 server.logout()
                 resultI = "OK"

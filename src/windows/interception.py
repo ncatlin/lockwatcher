@@ -223,9 +223,9 @@ wait                    = interceptionDll.interception_wait
 wait.argtypes           = [Context]
 wait.restype            = Device
 
-wait_with_timeout       = interceptionDll.interception_wait_with_timeout
-wait_with_timeout       = [Context, c_ulong]
-wait_with_timeout       = Device
+wait_with_timeout               = interceptionDll.interception_wait_with_timeout
+wait_with_timeout.argtypes       = [Context, c_ulong]
+wait_with_timeout.restype        = Device
 
 send_proto              = interceptionDll.interception_send
 send_proto.argtypes     = [Context, Device, Stroke, c_uint]
