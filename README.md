@@ -273,3 +273,5 @@ RAM acquisition in time or not is a mystery.
 seizure and acquisition at borders or on arrest, plus their critical reliance on a tiny stable of acquisition tools
  makes them the most deserving hosts of this kind of tool. Storage wiping would even be handy, but I don't know 
 if it can be done without jailbreaking at the very least.
+
+* The headings on this readme look ridiculously huge. Shrink em'.
