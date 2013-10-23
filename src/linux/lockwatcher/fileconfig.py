@@ -197,8 +197,9 @@ def loadConfig():
         email['bad_command_limit']='3'
         email['enable_remote']='False'
         email['email_motion_picture']='False'
-        email['alert_email_address']='changeme@mail.domain'
-        email['command_email_address']='yourpc@mail.domain'
+        email['alert_email_address']='yourphone@mail.domain'
+        email['command_email_address']='yourphone@mail.domain'
+        email['sender_email_address']='yourpc@mail.domain'
         
         config.add_section('KEYBOARD')
         config['KEYBOARD']['MAP'] = 'None'
@@ -236,7 +237,7 @@ def getLockProgram():
     elif os.access('/usr/bin/mate-screensaver-command', os.X_OK):
             return '/usr/bin/mate-screensaver-command -l'   
     else: 
-        print('No lock program found - cannot force lock activation')
+        print('No lock program found - may be unable to force lock activation')
         return None
 
 #find the UID to use with the dbus

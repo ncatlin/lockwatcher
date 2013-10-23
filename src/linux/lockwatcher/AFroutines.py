@@ -4,7 +4,7 @@ Created on 1 Sep 2013
 @author: Nia Catlin
 '''
 
-import os, subprocess, multiprocessing
+import os, subprocess, multiprocessing, threading
 from lockwatcher import fileconfig
 from lockwatcher import hardwareconfig
 
@@ -73,6 +73,25 @@ def unmountEncrypted():
 #set to none to disable log writing
 LOGFILE = None
 
+class execScript(object):
+    def __init__(self, script):
+        self.cmd = script
+        self.process = None
+
+    def run(self, timeout):
+        def target():
+            self.process = subprocess.Popen(self.cmd, shell=True)
+            self.process.communicate()
+
+        thread = threading.Thread(target=target)
+        thread.start()
+
+        thread.join(float(timeout))
+        
+        #try to terminate it but we don't really care, shutdown is going to happen anyway
+        if thread.is_alive():
+            self.process.terminate()
+            thread.join()
 
 #destroy data, deny access, poweroff
 #takes as arguments a message for the logfile and the status of the screen lock
@@ -106,8 +125,10 @@ def emergency(device=None):
         unmountEncrypted() 
         
         if config['TRIGGERS']['exec_shellscript'] == 'True':
-            subprocess.call("/etc/lockwatcher/sd.sh", shell=True, timeout=int(config['TRIGGERS']['script_timeout']))
-
+            timeLimit = float(fileconfig.config['TRIGGERS']['script_timeout'])
+            thread = execScript('/etc/lockwatcher/sd.sh')
+            thread.run(timeout=timeLimit)
+            
     except:
         pass
     

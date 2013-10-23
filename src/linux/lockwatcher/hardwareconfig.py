@@ -181,8 +181,9 @@ class BTScanThread(threading.Thread):
         try:
             scanprocess = subprocess.Popen(['hcitool','scan'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         except subprocess.CalledProcessError as e:
-            print('fuck ',e)
-        print("scanprocess = ",scanprocess)
+            self.callback("Could not execute hcitool: %s"+str(e))
+            return None
+        
         if scanprocess == []:
             self.callback("Bluetooth does not appear to be enabled: skipping")
             return None
@@ -205,7 +206,6 @@ class emailTestThread(threading.Thread):
         self.config = config
         self.name='mailTestThread'
     def run(self):
-        print("in email test thread")
         if self.config['EMAIL']['EMAIL_SMTP_HOST']!= None:
             try:
                 s = smtplib.SMTP(self.config['EMAIL']['EMAIL_SMTP_HOST'], timeout=10)
@@ -215,8 +215,6 @@ class emailTestThread(threading.Thread):
                 resultS = 'Authentication Error'
             except socket.timeout:
                 resultS = 'Connection Timeout'
-            except socket.gaierror:
-                resultS = 'Connection to %s failed'%self.config['EMAIL']['EMAIL_SMTP_HOST']
             except:
                 resultS = 'Connection to %s failed'%self.config['EMAIL']['EMAIL_SMTP_HOST']
             else:

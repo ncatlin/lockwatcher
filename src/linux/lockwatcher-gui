@@ -39,8 +39,8 @@ except:
 VERBOSELOGS = False
 
 #runs the daemon as one of our threads so we can attach a debugger
-DEBUGMODE = False
-CREATELW = False
+DEBUGMODE = True
+CREATELW = True
 if DEBUGMODE == True:
     if CREATELW == True:
         import lockwatcherd
@@ -173,6 +173,7 @@ class updateListenThread(threading.Thread):
             
 
 lockStates = ('Screen Locked','Anytime','Never')
+safeLockStates = ('Screen Locked','Never')
 
 OPT_STATUS = 0
 OPT_LOGS = OPT_STATUS+1
@@ -594,7 +595,7 @@ class MainWindow(Frame):
             elif triggerName == 'mouse':
                 self.sMouseLabel.config(fg=newColour)
             else:
-                print('Unhandled trigger update: ',triggerName)     
+                self.addMessage('Unhandled trigger update: '+str(triggerName))     
         except:
             #user probably destroyed label by changing tab, don't care  
             pass
@@ -609,7 +610,8 @@ class MainWindow(Frame):
             try:
                 self.doRedrawStatus.set(1)
             except: return
-        self.pendingLogs.append(msg)   
+            
+        if msg != None: self.pendingLogs.append(msg)   
          
     def processNewEvents(self):
         for update in self.pendingStatuses:
@@ -1120,7 +1122,7 @@ class MainWindow(Frame):
                 writeConfig()
         else: 
             if not os.path.exists(fileconfig.config['TRIGGERS']['keyboard_device']):
-                print('Keyboard device not found. Manually enter the relevant /dev/input/event* into keyboard_device in the config file.')
+                self.addMessage('Keyboard device not found. Manually enter the relevant /dev/input/event* into keyboard_device in the config file.')
         
         keymapFile = '/etc/lockwatcher/keymap'
         if not os.path.exists(keymapFile):
@@ -1131,7 +1133,7 @@ class MainWindow(Frame):
                 try:
                     mapfile = open(keymapFile,'rb')
                 except:
-                    print("Could not open ",keymapFile)
+                    self.addMessage("Could not open keymap file: %s"%keymapFile)
                 self.kCodeMap = pickle.load(mapfile)
         
         Label(parent,text='Setup a killswitch combination of one or more keys').pack(padx=5)
@@ -1281,14 +1283,16 @@ class MainWindow(Frame):
         
         Label(moveFrame,text='This trigger will activate when your mouse is moved').pack()
         
+        trigStateFrame =  ttk.LabelFrame(moveFrame,text="Trigger Condition",borderwidth=1,relief=GROOVE)
+        trigStateFrame.pack(pady=5)
+        
+        createToolTip(trigStateFrame, "Choose when the trigger will cause an emergency shutdown")
         triggerName = 'E_MOUSE_MV'
-        trigBox =  ttk.Combobox(moveFrame,values=lockStates,state='readonly',name=triggerName.lower())
+        trigBox = ttk.Combobox(trigStateFrame,values=safeLockStates,state='readonly',name=triggerName.lower())
         if triggerName in fileconfig.config['TRIGGERS']['lockedtriggers'].split(','):
             trigBox.current(0)
-        elif triggerName in fileconfig.config['TRIGGERS']['alwaystriggers'].split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
-        trigBox.pack(pady=5)
+        else: trigBox.current(1)
+        trigBox.pack(pady=5,padx=5)
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
         
         buttonFrame = ttk.Labelframe(parent,text='Mouse Buttons',relief=GROOVE)
@@ -1296,14 +1300,16 @@ class MainWindow(Frame):
         
         Label(buttonFrame,text='This trigger will activate when a button on your mouse is clicked\n (Only the middle three mouse buttons are supported)').pack()
         
+        trigStateFrame =  ttk.LabelFrame(buttonFrame,text="Trigger Condition",borderwidth=1,relief=GROOVE)
+        trigStateFrame.pack(pady=5)
+        createToolTip(trigStateFrame, "Choose when the trigger will cause an emergency shutdown")
+        
         triggerName = 'E_MOUSE_BTN'
-        trigBox =  ttk.Combobox(buttonFrame,values=lockStates,state='readonly',name=triggerName.lower())
+        trigBox = ttk.Combobox(trigStateFrame,values=safeLockStates,state='readonly',name=triggerName.lower())
         if triggerName in fileconfig.config['TRIGGERS']['lockedtriggers'].split(','):
             trigBox.current(0)
-        elif triggerName in fileconfig.config['TRIGGERS']['alwaystriggers'].split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
-        trigBox.pack(pady=5)
+        else: trigBox.current(1)
+        trigBox.pack(pady=5,padx=5)
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
         
   
@@ -1559,6 +1565,16 @@ class MainWindow(Frame):
         alertRecE = Entry(boxAR, textvariable=IMVar,bg='white')
         alertRecE.pack(side=RIGHT,fill=X,expand=YES)
         
+        boxSEA = Frame(boxOtherEmail)
+        boxSEA.pack(fill=X,expand=YES)
+        createToolTip(boxSEA,'Lockmonitor will send alerts, command responses and captured images from this email address.')
+        authSecretL = Label(boxSEA,text='Responder Email Address:',width=22)
+        authSecretL.pack(side=LEFT)
+        IMVar = StringVar()
+        IMVar.set(fileconfig.config['EMAIL']['SENDER_EMAIL_ADDRESS'])
+        IMVar.trace("w", lambda name, index, mode, IMVar=IMVar: self.changeEntryBox('EMAIL:sender_EMAIL_ADDRESS',IMVar))
+        alertRecE = Entry(boxSEA, textvariable=IMVar)
+        alertRecE.pack(side=RIGHT,fill=X,expand=YES)
         
         box5 = Frame(boxOtherEmail)
         createToolTip(box5,'Secret code used by Lockwatcher to authenticate remote commands')
