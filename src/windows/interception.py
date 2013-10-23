@@ -20,10 +20,10 @@ from ctypes import *
 from ctypes import _CFuncPtr
 
 try:
-    interceptionDll = cdll['interception.32.dll']
-except:
     interceptionDll = cdll['interception.64.dll']
-        
+except:
+    interceptionDll = cdll['interception.32.dll']
+    
 MAX_KEYBOARD   = 10
 MAX_MOUSE      = 10
 MAX_DEVICE     = MAX_KEYBOARD + MAX_MOUSE

@@ -19,7 +19,7 @@ from Tkinter import *
 from ttk import *
 import ttk
 from tooltip import createToolTip
-import FileDialog
+import tkFileDialog
 import _winreg
 from PIL import Image, ImageTk
 import win32api
@@ -53,12 +53,17 @@ optionCategories = {OPT_STATUS:'Status',
                     OPT_EMAIL:'Email Settings',
                     OPT_SHUT:'Shutdown Actions'}
 
+#interception doesn't work on win8
+version = sys.getwindowsversion()
+if version.major == 6 and version.minor > 1:
+    del optionCategories[OPT_KBD]
+    del optionCategories[OPT_MOUSE]
 
 VERBOSELOGS = False
 
 #run lockwatcher as a thread instead of a service
-DEBUGMODE = True
-CREATELW = True
+DEBUGMODE = False
+CREATELW = False
 if DEBUGMODE == True:
     import devdetect
     if CREATELW == True:
@@ -286,8 +291,11 @@ class MainWindow(Frame):
         optionsFrame.pack(side=LEFT,fill=Y)
         
         listbox = Listbox(parent,exportselection=0,selectmode=SINGLE)
-        for i in range(0,len(optionCategories.keys())):
-            listbox.insert(i,optionCategories[i])
+        for key in optionCategories.keys():
+            try:
+                listbox.insert(key,optionCategories[key])
+            except:
+                continue
         listbox.selection_set(0)
         listbox.bind('<<ListboxSelect>>', self.optionClicked)
         listbox.pack(side=LEFT, fill=Y, expand=NO)
@@ -308,7 +316,10 @@ class MainWindow(Frame):
         if self.tempThread != None:
             self.tempThread.terminate()
             self.tempThread = None
-    
+        
+        #clear recent keys if we left keyboard tab
+        self.recentKCodes = []
+        
         sendToLockwatcher('reloadConfig')
         self.draw_selected_panel(self.windowFrame)  
         root.minsize(root.winfo_width(), root.winfo_height())
@@ -334,9 +345,9 @@ class MainWindow(Frame):
             self.createBluetoothPanel(self.settingFrame)            
         elif label == optionCategories[OPT_MOTION]:
             self.createMotionPanel(self.settingFrame)
-        elif label == optionCategories[OPT_KBD]:
+        elif OPT_KBD in optionCategories.keys() and label == optionCategories[OPT_KBD]:
             self.createKeyboardPanel(self.settingFrame)
-        elif label == optionCategories[OPT_MOUSE]:
+        elif OPT_MOUSE in optionCategories.keys() and label == optionCategories[OPT_MOUSE]:
             self.createMousePanel(self.settingFrame)
         elif label == optionCategories[OPT_CHAS]:
             self.createChassisPanel(self.settingFrame)
@@ -627,7 +638,7 @@ class MainWindow(Frame):
         
     #todo: consolidate these for tc/log/mod
     def chooseLogFile(self):
-        path = filedialog.asksaveasfilename(filetypes=[('txt files','.txt')])
+        path = tkFileDialog.asksaveasfilename(filetypes=[('txt files','.txt')])
         if path != '':
             if '.txt' not in path: path = path+'.txt'
             self.logPath.set(path)
@@ -761,6 +772,7 @@ class MainWindow(Frame):
             errcode = out[1:]
             if errcode == '259': #no results found
                 out = out[1:]
+                self.BTDevList.insert(0,'No devices found')
             elif errcode == '6': #invalid handle
                 self.BTDevList.insert(0,'Scan failed: Bluetooth not enabled.')
             else:
@@ -907,7 +919,7 @@ class MainWindow(Frame):
             return #not a valid number
             
     def chooseMODFile(self):
-        path = filedialog.askopenfilename(filetypes=[('csv files','.csv')])
+        path = tkFileDialog.askopenfilename(filetypes=[('csv files','.csv')])
         if path != '':
             self.MODVar.set(path)
             
@@ -1020,7 +1032,7 @@ class MainWindow(Frame):
     def exampleShow(self,category):
         d = exampleDialog(root,category)
     
-    KCodes = []
+    recentKCodes = [] #codes in the current window
     def createKeyboardPanel(self,parent):  
         Label(parent,text='Setup a killswitch combination of one or more keys').pack(padx=5)
         
@@ -1116,7 +1128,7 @@ class MainWindow(Frame):
         
         ICLabelFrame = ttk.LabelFrame(parent,text=frameText)
         ICLabelFrame.pack(pady=5)
-        Label(ICLabelFrame,text='The Interception driver is required to capture keystrokes while locked').pack()
+        Label(ICLabelFrame,text='The Interception driver is used to watch mouse and keyboard activity').pack()
         
         ICBtns = Frame(ICLabelFrame)
         ICBtns.pack()
@@ -1139,21 +1151,29 @@ class MainWindow(Frame):
      
     def saveKbdCombo(self,number):
             newcombo = ''
-            for x in self.KCodes:
+            
+            for x in self.recentKCodes:
                 newcombo = newcombo+str(x)+'+'
-            newcombo = newcombo.strip('+')
-
+            newcombo = newcombo.strip('+()')
+            
+            if newcombo != '':
+                comboTxt = self.showKeysBox.get()
+            else:
+                comboTxt = ''
+            
             if number == 1:
                 fileconfig.config.set('TRIGGERS','kbd_kill_combo_1',newcombo)
-                self.KS1Label.config(text=self.showKeysBox.get())
+                fileconfig.config.set('TRIGGERS','kbd_kill_combo_1_txt',comboTxt)
+                self.KS1Label.config(text=comboTxt)
             else:
                 fileconfig.config.set('TRIGGERS','kbd_kill_combo_2',newcombo)
-                self.KS2Label.config(text=self.showKeysBox.get())
+                fileconfig.config.set('TRIGGERS','kbd_kill_combo_2_txt',comboTxt)
+                self.KS2Label.config(text=comboTxt)
             writeConfig()
             
     def clearKeys(self):
         self.IMVar.set('')
-        self.KCodes = []
+        self.recentKCodes = []
     
     def gotKbdKey(self,key,keyName):
         if key == 0x01: return #bad things happen if mouse L used
@@ -1177,9 +1197,9 @@ class MainWindow(Frame):
         else:
             text = text+'+'+keyStr    
         self.IMVar.set(text)
-        self.KCodes.append(key)
+        self.recentKCodes.append(key)
         
-        self.addMessage("Key %s (%s) pressed"%(key,keyStr))
+        #self.addMessage("Key %s (%s) pressed"%(key,keyStr))
     
     def createMousePanel(self,parent):
         
@@ -1530,8 +1550,8 @@ class MainWindow(Frame):
             TCPath.set(fileconfig.config.get('TRIGGERS','tc_path'))
         else:
             try:
-                key = winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "TrueCryptVolume\\Shell\\open\\command")
-                value =  winreg.QueryValue(key, None).split('"')[1]
+                key = _winreg.OpenKey(_winreg.HKEY_CLASSES_ROOT, "TrueCryptVolume\\Shell\\open\\command")
+                value =  _winreg.QueryValue(key, None).split('"')[1]
                 if os.path.exists(value):
                     TCPath.set(value)
                     fileconfig.config.set('TRIGGERS','tc_path',value)
@@ -1615,7 +1635,7 @@ class MainWindow(Frame):
         fd.close()
          
     def chooseTCFile(self):
-        newpath = filedialog.askopenfilename(filetypes=[('Truecrypt.exe','.exe')])
+        newpath = tkFileDialog.askopenfilename(filetypes=[('Truecrypt.exe','.exe')])
         if newpath != '' and os.path.exists(newpath):
             self.TCPath.set(newpath)
             fileconfig.config.set('TRIGGERS','tc_path',newpath)

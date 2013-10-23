@@ -146,10 +146,15 @@ class deviceMonitor(threading.Thread):
         threading.Thread.__init__(self)
         self.name = 'DeviceMonitor'
     def run(self):
-        CoInitialize()
-
-        self.c = wmi.WMI()
-        self.watcher = self.c.Win32_SystemConfigurationChangeEvent.watch_for() #called before devicechangeevent
+        try:
+            CoInitialize()
+    
+            self.c = wmi.WMI()
+            self.watcher = self.c.Win32_SystemConfigurationChangeEvent.watch_for() #called before devicechangeevent
+        except:
+            eventQueue.put(("Status",'devices',"Error: WMI Error"))
+            eventQueue.put(("Log","Unable to start device monitor: WMI error"))
+            return
         eventQueue.put(("Status",'devices',"Active"))
         
         self.running = True
@@ -392,7 +397,8 @@ class BTMonitor(threading.Thread):
         deviceID = hardwareconfig.BTStrToHex(deviceIDStr)
         
         if ':' not in deviceIDStr:
-            eventQueue.put(("Status",'bluetooth','Error: No Bluetooth device configured'))
+            eventQueue.put(("Status",'bluetooth','Error: Not configured'))
+            eventQueue.put(("Log",'Bluetooth monitor error: Device not configured'))
             return
         eventQueue.put(("Status",'bluetooth','Connecting to device...'))
         
@@ -624,6 +630,12 @@ class keyboardMonitor(threading.Thread):
         threading.Thread.__init__(self)
         self.name = 'KeyboardMonitor'
     def run(self):  
+        
+        version = sys.getwindowsversion()
+        if version.major == 6 and version.minor > 1:
+            eventQueue.put(("Status",'killSwitch',"Error: Win8 Not Supported"))
+            return
+            
         keyQueue = Queue.Queue()
         self.interceptListener = hardwareconfig.interceptListenThread(keyQueue)
         self.interceptListener.start()
@@ -1011,8 +1023,7 @@ class lockwatcher(threading.Thread):
             elif eventType == 'reloadConfig':
                 fileconfig.reloadConfig()
                 if isRunning('keyboardMonitor',threadDict): threadDict['keyboardMonitor'].reloadConfig()
-                eventQueue.put(('Log','Config reload forced'))  #debugmode
-                
+                #eventQueue.put(('Log','Config reload forced'))  #debugmode
                 
             elif eventType == 'newListener':
                 port = int(event[1])

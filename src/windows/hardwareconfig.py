@@ -9,12 +9,16 @@ import smtplib
 import wmi,pythoncom,ctypes
 import fileconfig
 import win32con, win32api, time
+import Queue, sys
 
+winversion = sys.getwindowsversion()
+if winversion.major != 6 or winversion.minor < 2:
+    from interception import *
+    
 lockState = False
 def checkLock(): return lockState
 
-import Queue
-from interception import *
+
 class interceptListenThread(threading.Thread):
     def __init__(self,keyQueue):
         threading.Thread.__init__(self) 
@@ -162,6 +166,14 @@ def BTStrToHex(BTStr):
     
     return hexDevID      
 
+def plog2(sf):
+        try:
+            fd = open('c:\loglock.txt','a+')
+            fd.write(time.strftime('[%x %X] ')+str(sf)+'\n') 
+            fd.close()
+        except:
+            pass
+
 #sends the output of 'hcitool scan' to the callback function
 #ie: a list of nearby discoverable bluetooth devices
 class BTScanThread(threading.Thread):
@@ -171,18 +183,21 @@ class BTScanThread(threading.Thread):
         self.name='btScanThread'
     def run(self):
         try:
-            scanprocess = subprocess.Popen(['btscanner'], stdout=subprocess.PIPE)
+            scanprocess = subprocess.Popen([os.path.join(os.getcwd(),'btscanner.exe')], stdout=subprocess.PIPE)
         except WindowsError as e:
-            self.callback(e)
+            self.callback("[Error]"+str(e))
             return None
         
-        if scanprocess == []:
-            self.callback("[Error] Bluetooth does not appear to be enabled: skipping")
-            return None
+        try:
+            if scanprocess == []:
+                self.callback("[Error] Bluetooth does not appear to be enabled: skipping")
+                return None
 
-        out, err = scanprocess.communicate()
-        self.callback(out)
-
+            out, err = scanprocess.communicate()
+            self.callback(out)
+        except:
+            plog2('btscan except: %s'%str(sys.exc_info()))
+        
         return None
 
 #checks temperature.csv for updates
