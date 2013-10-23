@@ -20,13 +20,11 @@ Linux Installation
 
 Install the dependencies, extract the software, install, run, configure
 
-It should look something like this:
-
 *On Debian/-buntu/mint/etc:*
+```
+sudo apt-get install python3 python3-setuptools python3-tk python3-pillow ifplugd python3-dbus
 
-sudo apt-get install python3 python3-pyudev python3-setuptools python3-tk python3-imaging ifplugd python3-dbus
-
-sudo easy_install3 IMAPClient
+sudo easy_install3 IMAPClient pyudev
 
 tar -xvzf Lockwatcher*
 
@@ -37,10 +35,12 @@ sudo python3 setup.py install
 sudo lockwatcherd start
 
 lockwatcher-gui
+```
+
 
 *On fedora and its brethren:*
-
-sudo yum install python3 ifplugd python3-setuptools python3-tkinter python3-pillow python3-dbus
+```
+sudo yum install python3 python3-setuptools python3-tkinter python3-pillow ifplugd python3-dbus
 
 sudo easy_install-3.3 IMAPClient pyudev
 
@@ -53,7 +53,7 @@ sudo python3 setup.py install
 sudo lockwatcherd start
 
 lockwatcher-gui
-
+```
 
 Windows Installation (Windows 7, 64 bit)
 ================
