@@ -39,8 +39,8 @@ except:
 VERBOSELOGS = False
 
 #runs the daemon as one of our threads so we can attach a debugger
-DEBUGMODE = True
-CREATELW = True
+DEBUGMODE = False
+CREATELW = False
 if DEBUGMODE == True:
     if CREATELW == True:
         import lockwatcherd
