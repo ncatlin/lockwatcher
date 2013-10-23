@@ -9,11 +9,11 @@ It was thought up when writing a proof of concept for defeating live forensic an
 
 Download
 =========
-Linux 32-bit https://github.com/ncatlin/lockwatcher/blob/master/Lockwtcher-0.1-32.tar.gz
+Linux 32-bit https://github.com/ncatlin/lockwatcher/raw/master/Lockwtcher-0.1-32.tar.gz
 
-Linux 64-bit https://github.com/ncatlin/lockwatcher/blob/master/Lockwatcher-0.1-64.tar.gz
+Linux 64-bit https://github.com/ncatlin/lockwatcher/raw/master/Lockwatcher-0.1-64.tar.gz
 
-Windows 64-bit https://github.com/ncatlin/lockwatcher/blob/master/lockwatcher-setup.exe
+Windows 64-bit https://github.com/ncatlin/lockwatcher/raw/master/lockwatcher-setup.exe
 
 Linux Installation
 ================
