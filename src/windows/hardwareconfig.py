@@ -10,10 +10,8 @@ import wmi,pythoncom,ctypes
 import fileconfig
 import win32con, win32api, time
 
-
 lockState = False
 def checkLock(): return lockState
-
 
 import Queue
 from interception import *
@@ -26,11 +24,11 @@ class interceptListenThread(threading.Thread):
     def run(self):
         stroke = Stroke()
         context = create_context()
-        #set_filter( context, is_keyboard, FILTER_KEY_DOWN | FILTER_KEY_UP)
+        set_filter( context, is_keyboard, FILTER_KEY_DOWN | FILTER_KEY_UP)
         set_filter( context, is_mouse, FILTER_MOUSE_ALL)
         keyStroke = KeyStroke()
         mouseStroke = MouseStroke()
-        
+
         self.context = context
         self.listening = True
         lastMoveEvent = time.time() #dont want to spam event queue with mouse moves
@@ -41,18 +39,16 @@ class interceptListenThread(threading.Thread):
                     if self.listening == True: continue
                     else: break
 
-                
                 if is_keyboard(device):
                     stroke2KeyStroke( stroke, dest = keyStroke )
                     send(context,device, keyStroke,1)
-                    if checkLock() == False: continue
-                    
                     kCode = win32api.MapVirtualKey(keyStroke.code,3) #MAPVK_VSC_TO_VK_EX
+                    
                     if kCode in vkDict.keys():
                         keyname = vkDict[kCode]
                     else: keyname = 0
-                    
-                    self.keyQueue.put(({0:False,1:True}[keyStroke.state],(kCode,keyname)))
+                
+                    self.keyQueue.put(({1:False,0:True}[keyStroke.state],(kCode,keyname)))
                 elif is_mouse(device):
                     stroke2MouseStroke( stroke, dest = mouseStroke )
                     send(context,device, mouseStroke,1)
@@ -87,7 +83,7 @@ class kbdHookListenThread(threading.Thread):
         releasedKeys=[]
         
         while self.listening == True:
-            time.sleep(0.001)
+            time.sleep(0.002)
             
             #stop keyholding from sending multiple keypresses
             for heldKey in heldKeys:
@@ -124,9 +120,7 @@ class kbdProcessThread(threading.Thread):
         
         hookListener = kbdHookListenThread(keyQueue)
         hookListener.start()
-        interceptListener = interceptListenThread(keyQueue)
-        interceptListener.start()
-
+        
         
         self.listening = True
         while self.listening == True:
@@ -134,7 +128,6 @@ class kbdProcessThread(threading.Thread):
             if eventType == True: self.callback(eventDetails[0],eventDetails[1])
 
         if hookListener.is_alive(): hookListener.stop()
-        if interceptListener.is_alive(): interceptListener.stop()
                         
 
     def terminate(self):
@@ -177,14 +170,12 @@ class BTScanThread(threading.Thread):
         self.callback = callback
         self.name='btScanThread'
     def run(self):
-        
         try:
             scanprocess = subprocess.Popen(['btscanner'], stdout=subprocess.PIPE)
         except WindowsError as e:
             self.callback(e)
             return None
         
-        print("scanprocess = ",scanprocess)
         if scanprocess == []:
             self.callback("[Error] Bluetooth does not appear to be enabled: skipping")
             return None
@@ -244,7 +235,7 @@ class netScanThread(threading.Thread):
     def run(self):
         pythoncom.CoInitialize()
         c = wmi.WMI()
-        adapters = c.Win32_NetworkAdapter()
+        adapters = c.Win32_NetworkAdapter(PhysicalAdapter=True)
         try:
             self.callback(adapters)
         except:
@@ -259,7 +250,6 @@ class emailTestThread(threading.Thread):
         self.config = config
         self.name='mailTestThread'
     def run(self):
-        print("in email test thread")
         smtpHost = self.config.get('EMAIL','EMAIL_SMTP_HOST')
         if smtpHost != None:
             try:

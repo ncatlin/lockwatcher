@@ -3,17 +3,23 @@
 
 Various config file handling routines
 '''
-import ConfigParser, os 
+import ConfigParser, os, time
+import _winreg 
 
-TRIG_LOCKED = 0
-TRIG_ALWAYS = 1
-TRIG_NEVER = 2
-
-CONFIG_FILE = os.path.join(os.getcwd(),'lockwatcher.ini')
+CONFIG_FILE = None
 config = None
 
+def plog2(sf):
+        
+        try:
+            fd = open('c:\programdata\loglock.txt','a+')
+            fd.write(time.strftime('[%x %X] ')+str(sf)+'\n') 
+            fd.close()
+        except:
+            pass
+
 def writeConfig():
-    with open(CONFIG_FILE, 'wb') as configfile:
+    with open(CONFIG_FILE, 'w') as configfile:
             config.write(configfile)#,space_around_delimiters=False)
             
 def checkBtnChanged(btn):
@@ -47,56 +53,24 @@ def entryChanged(thing):
     config[section][entryName] = thing.get_text()
     writeConfig()
 
-def tktrigStateChange(combo):
-    LOCKED = config['TRIGGERS']['lockedtriggers'].split(',')
-    ALWAYS = config['TRIGGERS']['alwaystriggers'].split(',')
-    
-    new_trigger = combo.widget.current()
-    trigger_type = combo.widget._name.upper()
-    
-    if trigger_type in LOCKED:
-        LOCKED.remove(trigger_type)
-    if trigger_type in ALWAYS:
-        ALWAYS.remove(trigger_type)
-                
-    if new_trigger == TRIG_LOCKED:
-        LOCKED.append(trigger_type)
-    elif new_trigger == TRIG_ALWAYS:
-        ALWAYS.append(trigger_type)
-    
-    config['TRIGGERS']['lockedtriggers'] = str(LOCKED).strip("[]").replace("'","").replace(" ","")
-    config['TRIGGERS']['alwaystriggers'] = str(ALWAYS).strip("[]").replace("'","").replace(" ","")
-    writeConfig()
-
 def isActive(trigger):
-    if trigger in config['TRIGGERS']['alwaystriggers'].split(','):
+    if trigger in config.get('TRIGGERS','alwaystriggers').split(','):
         return (True,'Always')
-    elif trigger in config['TRIGGERS']['lockedtriggers'].split(','):
+    elif trigger in config.get('TRIGGERS','lockedtriggers').split(','):
         return (True,'Locked')
     else:
         return (False,False)
 
-def trigStateChange(combo):
-    new_trigger = combo.get_active()
-    trigger_type = combo.get_title().strip()
-    LOCKED = config['TRIGGERS']['lockedtriggers'].split(',')
-    ALWAYS = config['TRIGGERS']['alwaystriggers'].split(',')
-    
-    if trigger_type in LOCKED:
-        LOCKED.remove(trigger_type) 
-    if trigger_type in ALWAYS:
-        ALWAYS.remove(trigger_type)
-          
-    if new_trigger == TRIG_LOCKED:
-        LOCKED.append(trigger_type)
-    elif new_trigger == TRIG_ALWAYS:
-        ALWAYS.append(trigger_type)
-        
-    config['TRIGGERS']['lockedtriggers'] = str(LOCKED).strip("[]").replace("'","").replace(" ","")
-    config['TRIGGERS']['alwaystriggers'] = str(ALWAYS).strip("[]").replace("'","").replace(" ","")
-    writeConfig()
-
 def loadConfig():
+    global CONFIG_FILE
+    try:
+        key = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,"SOFTWARE\Lockwatcher")
+        CONFIG_FILE = str(_winreg.QueryValueEx(key,'ConfigPath')[0])
+    except:
+        key = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,"SOFTWARE\Wow6432Node\Lockwatcher")
+        CONFIG_FILE = str(_winreg.QueryValueEx(key,'ConfigPath')[0])
+    
+    plog2('Loading configFile: %s'%CONFIG_FILE)
     if not os.path.exists(CONFIG_FILE) or os.path.getsize(CONFIG_FILE)<20:
         global config
         config = ConfigParser.ConfigParser()
@@ -110,6 +84,7 @@ def loadConfig():
         config.set('TRIGGERS','alwaystriggers','E_KILL_SWITCH_1')
         config.set('TRIGGERS','dismount_tc','False')
         config.set('TRIGGERS','exec_shellscript','False')
+        config.set('TRIGGERS','script_timeout','0')
         config.set('TRIGGERS','adapterconguids','')
         config.set('TRIGGERS','adapterdisconguids','')
         config.set('TRIGGERS','ballistix_log_file','')
@@ -117,7 +92,7 @@ def loadConfig():
         config.set('TRIGGERS','ispy_path','')
         config.set('TRIGGERS','room_cam_id','')
         config.set('TRIGGERS','logfile','')
-        config.set('TRIGGERS','immediatestart','False')
+        config.set('TRIGGERS','test_mode','False')
         
         config.add_section('EMAIL')
         
@@ -130,8 +105,9 @@ def loadConfig():
         config.set('EMAIL','bad_command_limit','3')
         config.set('EMAIL','enable_remote','False')
         config.set('EMAIL','email_motion_picture','False')
-        config.set('EMAIL','alert_email_address','changeme@mail.domain')
-        config.set('EMAIL','command_email_address','yourpc@mail.domain')
+        config.set('EMAIL','alert_email_address','yourphone@mail.domain')
+        config.set('EMAIL','command_email_address','yourphone@mail.domain')
+        config.set('EMAIL','sender_email_address','yourpc@mail.domain')
         writeConfig()
     else:    
         config = ConfigParser.ConfigParser()

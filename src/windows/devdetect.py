@@ -10,6 +10,7 @@ and trigger the antiforensic module if the screen is locked
 import AFroutines
 import fileconfig, hardwareconfig, sendemail, winsockbtooth
 
+import socket,sys
 import threading, Queue, subprocess
 import select
 import os,time,datetime
@@ -19,21 +20,41 @@ from pythoncom import CoInitialize, CoUninitialize
 
 eventQueue = None
 allStop = False
+startupTime = None
 
 lockedStateText = {True:'Locked',False:'Not Locked'}
 #trigger events go here to be checked for activation conditions
 def eventHandle(event_type,eventReason):
     locked = hardwareconfig.checkLock()
+
     
-    if (event_type in fileconfig.config.get('TRIGGERS','ALWAYSTRIGGERS').split(',')) or \
-        (event_type in fileconfig.config.get('TRIGGERS','LOCKEDTRIGGERS').split(',') and locked == True):
-        eventQueue.put(("Log","[%s - *Trigger activated*]. %s"%(lockedStateText[locked],eventReason)))
-        eventQueue.put(("Kill",eventReason))
-    else:
-        '''log the ignored trigger (but not the 2nd killswitch because a logfile containing
-        every press of the letter 'p' is going to be a mess)'''
-        if event_type not in  ['E_MOUSE_MOVE','E_MOUSE_BTN','E_KILL_SWITCH_2']:
-            eventQueue.put(("Log","[%s - Trigger ignored]. %s"%(lockedStateText[locked],eventReason)))
+    while True: #this can be a race condition with configfile alterations. try again if we get a bad reading
+        try:   
+            alwaysTriggers = fileconfig.config.get('TRIGGERS','ALWAYSTRIGGERS').split(',')
+            lockedTriggers = fileconfig.config.get('TRIGGERS','LOCKEDTRIGGERS').split(',')
+            
+            if (event_type in alwaysTriggers) or (event_type in lockedTriggers and locked == True):
+                
+                eventQueue.put(("Log","[%s - *Trigger ACTIVATED*]. %s"%(lockedStateText[locked],eventReason)))
+                
+                if fileconfig.config.get('TRIGGERS','test_mode') == 'False':
+                    #allow recovery in situations where the computer would shuts down as soon as it starts up
+                    if time.time() < startupTime + 90:
+                        eventQueue.put(("Log",'Shutdown cancelled - Not allowed within 90 seconds of lockwatcher start'))
+                    else:
+                        eventQueue.put(("Kill",eventReason))
+                else:
+                    eventQueue.put(("Log",'Shutdown cancelled - test mode active'))
+            else:
+                '''log the ignored trigger (but not the 2nd killswitch because a logfile containing
+                every press of the letter 'p' is going to be a mess)'''
+                if event_type not in  ['E_MOUSE_MOVE','E_MOUSE_BTN','E_KILL_SWITCH_2']:
+                    eventQueue.put(("Log","[%s - Trigger ignored]. %s"%(lockedStateText[locked],eventReason)))
+            
+            break
+        except:
+            time.sleep(0.3)
+            continue
     
 #running as a service makes exception handling more difficult
 #write log directly instead of relying on eventqueue processing    
@@ -239,10 +260,11 @@ class emailMonitor(threading.Thread):
             #refresh the connection every 14 mins so it doesnt timeout
             try:
                 seqid = server.idle_check(840)
-            except ValueError:
+            except:
                 if self.running == False: #terminate() was called
                     eventQueue.put(("Status",'email','Not Running')) 
                     return
+                
             if seqid == []: #no mail
                 try:
                     server.idle_done()
@@ -251,11 +273,14 @@ class emailMonitor(threading.Thread):
                 except:
                     if self.running == False: break
                     
-                    eventQueue.put(("Status",'email','Attempting reconnect attempt %s'%(connectionFails)))
-                    time.sleep(connectionFails * 3)
+                    eventQueue.put(("Status",'email','Attempting reconnect #%s'%(connectionFails)))
+                    eventQueue.put(('Log',"IMAP connection lost. Attempting reconnect #%s"%(connectionFails)))
+                    
+                    if connectionFails > 0: time.sleep(connectionFails * 3)
                     connectionFails += 1
                     if connectionFails >= 3:
                         eventQueue.put(("Status",'email','Error: Too many failed attempts'))
+                        eventQueue.put(('Log',"IMAP connection lost. Giving up."))
                         return
                     try:
                         server = setupIMAP()
@@ -306,11 +331,12 @@ class RAMMonitor(threading.Thread):
             try:
                 csvfile = open(fileconfig.config.get('TRIGGERS','BALLISTIX_LOG_FILE'),mode='rb')
             except IOError as e:
-                if e.errno == 2:
-                    print("Unable to open Ballistix MOD Log file: %s. Cannot monitor RAM temperature."%e)
-                    return
-                else:
-                    continue #probably locked by logger writing
+                eventQueue.put(("Status",'ram',"Error: Cannot read Temperature.csv"))
+                eventQueue.put(("Log","Unable to open Ballistix MOD Log file: %s. Cannot monitor RAM temperature."%e))
+                return
+            except:
+                time.sleep(0.7)
+                continue #probably locked by logger writing
         
             csvfile.seek(-30, 2)
             line = csvfile.readline()
@@ -360,10 +386,15 @@ class BTMonitor(threading.Thread):
         self.socket = None
     def run(self):
         self.running = True
-        eventQueue.put(("Status",'bluetooth','Connecting to device...'))
+        
 
         deviceIDStr = fileconfig.config.get('TRIGGERS','bluetooth_device_id')
         deviceID = hardwareconfig.BTStrToHex(deviceIDStr)
+        
+        if ':' not in deviceIDStr:
+            eventQueue.put(("Status",'bluetooth','Error: No Bluetooth device configured'))
+            return
+        eventQueue.put(("Status",'bluetooth','Connecting to device...'))
         
         error, result = winsockbtooth.connect(deviceID)
         if error == True:
@@ -418,6 +449,15 @@ class adapterDisconnectMonitor(threading.Thread):
     def run(self):
         try:
             CoInitialize()
+            
+            #this code repeated in lw-gui; put it in a function somewhere
+            c = wmi.WMI()
+            networkAdapters = c.Win32_NetworkAdapter(PhysicalAdapter=True)
+            
+            guidDict={}
+            for ad in networkAdapters:
+                guidDict[ad.Name] = ad.GUID
+            
             self.c = wmi.WMI(moniker="//./root/WMI")
             self.watcher = self.c.MSNdis_StatusMediaDisconnect.watch_for()
         except:
@@ -431,7 +471,9 @@ class adapterDisconnectMonitor(threading.Thread):
                 event = self.watcher(timeout_ms=2000)
             except wmi.x_wmi_timed_out:
                 continue
-            eventHandle('E_NET_CABLE_OUT',"Net adapter %s lost connection"%event.InstanceName)
+            if event.InstanceName in guidDict.keys() and \
+                guidDict[event.InstanceName] in fileconfig.config.get('TRIGGERS','adapterDisconGUIDS').split(';'):
+                eventHandle('E_NET_CABLE_OUT',"Net adapter '%s' lost connection"%event.InstanceName)
             
         CoUninitialize()
         eventQueue.put(("Status",'netAdaptersOut','Disconnect: Not Running'))
@@ -446,6 +488,15 @@ class adapterConnectMonitor(threading.Thread):
     def run(self):
         try:
             CoInitialize()
+            
+            #this code repeated in lw-gui; put it in a function somewhere
+            c = wmi.WMI()
+            networkAdapters = c.Win32_NetworkAdapter(PhysicalAdapter=True)
+            
+            guidDict={}
+            for ad in networkAdapters:
+                guidDict[ad.Name] = ad.GUID
+                
             self.c = wmi.WMI(moniker="//./root/WMI")
             self.watcher = self.c.MSNdis_StatusMediaConnect.watch_for()
         except:
@@ -459,15 +510,15 @@ class adapterConnectMonitor(threading.Thread):
                 event = self.watcher(timeout_ms=2000)
             except wmi.x_wmi_timed_out:
                 continue
-            eventHandle('E_NET_CABLE_IN',"net adapter %s gained connection"%event.InstanceName)    
+            if event.InstanceName in guidDict.keys() and \
+                guidDict[event.InstanceName] in fileconfig.config.get('TRIGGERS','adapterConGUIDS').split(';'):
+                eventHandle('E_NET_CABLE_IN',"net adapter '%s' gained connection"%event.InstanceName)    
             
         CoUninitialize()
         eventQueue.put(("Status",'netAdaptersIn','Connect: Not Running')) 
     def terminate(self):
         self.running = False        
 
-#detect new network cable inserted
-import socket,sys
 class cameraMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
@@ -479,6 +530,7 @@ class cameraMonitor(threading.Thread):
             self.socket = s
         except:
             eventQueue.put(("Status",'cameras',"Can't bind socket 22190\nIs another lockwatcher running?"))
+            eventQueue.put(("Log","Can't bind socket 22190. Is another lockwatcher running?"))
             print('Camera listen exception: %s'%sys.exc_info()[0])
             return
         
@@ -497,13 +549,8 @@ class cameraMonitor(threading.Thread):
             
             data = data.decode('UTF-8')
             
-            if data == '1':
-                    if fileconfig.isActive('E_CHASSIS_MOTION')[0] != 'False':
-                        eventHandle('E_CHASSIS_MOTION',"Chassis camera motion detected") 
-                        
-            elif data == '2':
-                    if fileconfig.isActive('E_ROOM_MOTION')[0] != 'False':
-                        eventHandle('E_ROOM_MOTION',"Room camera motion detected") 
+            if data == '1': eventHandle('E_CHASSIS_MOTION',"Chassis camera motion detected") 
+            elif data == '2': eventHandle('E_ROOM_MOTION',"Room camera motion detected") 
                         
         eventQueue.put(("Status",'cameras',"Not Running"))   
     def terminate(self):
@@ -511,7 +558,7 @@ class cameraMonitor(threading.Thread):
         self.socket.shutdown(socket.SHUT_RD)
         self.socket.close()
    
-#receive commands from from config programs
+#listen on port 22191, receive commands from from config programs
 class configMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
@@ -545,7 +592,7 @@ class configMonitor(threading.Thread):
             
             data = s.recv(1024)
             command = data.decode('UTF-8')             
-            
+            plog('In confmon: '+str(command))
             if ':' in command: 
                 command,value = command.split(':')
             else: value = None
@@ -578,8 +625,6 @@ class keyboardMonitor(threading.Thread):
         self.name = 'KeyboardMonitor'
     def run(self):  
         keyQueue = Queue.Queue()
-        self.hookListener = hardwareconfig.kbdHookListenThread(keyQueue)
-        self.hookListener.start()
         self.interceptListener = hardwareconfig.interceptListenThread(keyQueue)
         self.interceptListener.start()
         
@@ -599,10 +644,9 @@ class keyboardMonitor(threading.Thread):
                     if key == '': break
                     secondaryKillKeys[int(key)] = False
                 self.reloadKeys = False
-            
+        
             try:
                 eventType,eventDetails = keyQueue.get(True,1)
-                #print('event: %s details:%s in kbd/mouse queue'%(eventType,eventDetails))
             except: 
                 if self.running == False: break
                 continue
@@ -616,20 +660,21 @@ class keyboardMonitor(threading.Thread):
             else:      
                 key = eventDetails[0]
         
-            
             if key in primaryKillKeys.keys(): 
                 primaryKillKeys[key] = eventType
             if key in secondaryKillKeys.keys(): 
                 secondaryKillKeys[key] = eventType
 
-            for keyState in primaryKillKeys.values():
-                if keyState == False: break
-            else:
-                eventHandle('E_KILL_SWITCH_1',"Kill switch 1 pressed")
+            if len(primaryKillKeys.keys()) > 0:
+                for keyState in primaryKillKeys.values():
+                    if keyState == False: break
+                else:
+                    eventHandle('E_KILL_SWITCH_1',"Kill switch 1 pressed")
                     
-            for keyState in secondaryKillKeys.values():
-                if keyState == False: break 
-            else: eventHandle('E_KILL_SWITCH_2',"Kill switch 2 pressed")
+            if len(secondaryKillKeys.keys()) > 0:        
+                for keyState in secondaryKillKeys.values():
+                    if keyState == False: break 
+                else: eventHandle('E_KILL_SWITCH_2',"Kill switch 2 pressed")
                             
         eventQueue.put(("Status",'killSwitch',"Not Running"))
         
@@ -638,9 +683,15 @@ class keyboardMonitor(threading.Thread):
     
     def terminate(self):
         self.running = False
-        self.hookListener.stop()
         self.interceptListener.stop()
-        
+
+def isRunning(threadName,threadDict):
+    if threadName in threadDict.keys() and \
+        threadDict[threadName] != None and \
+            threadDict[threadName].is_alive() == True:
+                return True
+    else: return False
+      
 
 REMOTE_LOCK = 1
 REMOTE_STARTMONITOR = 2
@@ -653,31 +704,51 @@ def executeRemoteCommand(command):
     if command == REMOTE_LOCK:
         if hardwareconfig.checkLock() == False:
             AFroutines.lockScreen()
-            sendemail.sendEmail("Command successful","Screen locked")
+            result = sendemail.sendEmail("Command successful","Screen locked")
+            eventQueue.put(("Log",'Screen locked due to remote command'))
         else:
             eventQueue.put(("Log",'Lock screen failed - command received while locked'))
-            sendemail.sendEmail("Command failed","Screen already locked")
+            result = sendemail.sendEmail("Command failed","Screen already locked")
+            
+        if result != True:
+            eventQueue.put(('Log','Mail send failed: %s'%result))
             
     elif command == REMOTE_STARTMONITOR:
         #cant check ispy camera status, just have to assume it was not monitoring
         iSpyPath = fileconfig.config.get('TRIGGERS','ispy_path')
         roomCamID = fileconfig.config.get('TRIGGERS','room_cam_id')
-        eventQueue.put(("Log","Starting room camera after remote command"))
+        if os.path.exists(iSpyPath):
+            eventQueue.put(("Log","Starting room camera due to remote command"))
+        else:
+            eventQueue.put(("Log","iSpy executable not found - cannot fulfill remote command"))
+            return
+        
         subprocess.call([iSpyPath,'commands bringonline,2,%s'%roomCamID])
-        sendemail.sendEmail("Command successful","Movement monitoring initiated. Have a nice day.")
+        result = sendemail.sendEmail("Command successful","Movement monitoring initiated. Have a nice day.")
+        if result != True:
+            eventQueue.put(('Log','Mail send failed: %s'%result))
         
         
     elif command == REMOTE_STOPMONITOR:
         #cant check ispy camera status, just have to assume it was already monitoring
         iSpyPath = fileconfig.config.get('TRIGGERS','ispy_path')
         roomCamID = fileconfig.config.get('TRIGGERS','room_cam_id')
-        eventQueue.put(("Log","Stopping room camera after remote command"))
+        if os.path.exists(iSpyPath):
+            eventQueue.put(("Log","Stopping room camera due to remote command"))
+        else:
+            eventQueue.put(("Log","iSpy executable not found - cannot fulfill remote command"))
+            return
+            
         subprocess.call([iSpyPath,'commands takeoffline,2,%s'%roomCamID])
-        sendemail.sendEmail("Command successful","Movement monitoring disabled. Welcome home!")
+        result = sendemail.sendEmail("Command successful","Movement monitoring disabled. Welcome home!")
+        if result != True:
+            eventQueue.put(('Log','Mail send failed: %s'%result))
         
     elif command == REMOTE_SHUTDOWN:
-        sendemail.sendEmail("Command successful","Shutting down...")
-        eventQueue.put(("Log","Initiating standard shutdown after remote command"))
+        result = sendemail.sendEmail("Command successful","Shutting down...")
+        if result != True:
+            eventQueue.put(('Log','Mail send failed: %s'%result))
+        eventQueue.put(("Log","Initiating standard shutdown due to remote command"))
         AFroutines.standardShutdown()
         
     elif command == REMOTE_KILLSWITCH:
@@ -755,7 +826,7 @@ def startMonitor(threadDict,trigger):
 #send message to every connected listener
 def broadcast(listeners,msg):
     badConnections = []
-    msg = msg+'@'
+    msg = msg+'@@'
     for connection in listeners:
         try:
             connection.send(msg.encode())
@@ -778,34 +849,29 @@ def addLogEntry(msg,listeners):
     
     broadcast(listeners,'Log::'+entry)   
     
-def printeq():
-    plog('eqp == %s'%eventQueue)
-        
 class lockwatcher(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.name = 'Lockwatcher'
     def run(self):
         
-        plog('in lw run')
+        plog('Lockwatcher Started')
+        global startupTime 
+        startupTime = time.time()
+        
         #send log/status updates to connections in here - for config programs
         listeners = []
         
+        confMonThread = configMonitor()
+        confMonThread.start()
         
-        cmon = configMonitor()
-        cmon.start()
-        
-        plog('in lw run trigs1')
         LOCKED = fileconfig.config.get('TRIGGERS','lockedtriggers').split(',')
         ALWAYS = fileconfig.config.get('TRIGGERS','alwaystriggers').split(',')
         ACTIVE = LOCKED+ALWAYS
-        plog('in lw run trigs2')
         
         global eventQueue
         eventQueue = Queue.Queue()
-        plog('eq == %s'%eventQueue)
-        printeq()
-        
+
         threadStatuses = {}
         threadDict = {}
         
@@ -833,6 +899,7 @@ class lockwatcher(threading.Thread):
         shutdownActivated = False
         while True:
             event = eventQueue.get(block=True, timeout=None)
+            plog('In eventq: '+str(event))
             eventType = event[0]
             
             #--------------trigger activated under shutdown conditions
@@ -846,7 +913,9 @@ class lockwatcher(threading.Thread):
                         'Kill switch' not in eventReason:
                         try:
                             #has a 4 second timeout for blocking operations
-                            sendemail.sendEmail('Emergency shutdown triggered',eventReason)
+                            result = sendemail.sendEmail('Emergency shutdown triggered',eventReason)
+                            if result != True:
+                                eventQueue.put(('Log','Mail send failed: %s'%result))
                         except:
                             pass #email failed, oh well. 
                     AFroutines.emergency()
@@ -874,20 +943,18 @@ class lockwatcher(threading.Thread):
                 
             elif eventType == 'stop':
                 broadcast(listeners,'Shutdown')
-                for thread in threadDict.values():
-                    if thread == None: continue
-                    if thread.is_alive(): 
-                        thread.terminate()
-                cmon.terminate()
+                for threadname in threadDict.keys():
+                    if isRunning(threadname,threadDict): threadDict[threadname].terminate()
+                confMonThread.terminate()
                 time.sleep(1) #give threads time to shutdown
                 return
             
             elif eventType == 'startMonitor':
                 monitor=event[1]
-                thread = trigMonitorMap[monitor]
-                if thread not in threadDict.keys() or threadDict[thread] == None or \
-                    threadDict[thread].is_alive() == False:
-                    startMonitor(threadDict,trigEventMap[monitor])
+                if monitor in trigMonitorMap.keys():
+                    thread = trigMonitorMap[monitor]
+                else: continue
+                if not isRunning(thread,threadDict): startMonitor(threadDict,trigEventMap[monitor])
             
             elif eventType == 'stopMonitor':
                 monitor = event[1]
@@ -899,8 +966,7 @@ class lockwatcher(threading.Thread):
                     threadnames = [trigMonitorMap[monitor]]
                     
                 for threadname in threadnames:
-                    if threadname in threadDict and threadDict[threadname] != None \
-                        and threadDict[threadname].is_alive():
+                    if isRunning(threadname,threadDict):
                         threadDict[threadname].terminate()
                         threadDict[threadname] = None
             
@@ -929,7 +995,9 @@ class lockwatcher(threading.Thread):
                     badCommands = 0 #good command resets limit
                 else:
                     badCommands += 1
-                    sendemail.sendEmail("Command failed","Bad command or authentication code received: %s"%str(event[1]))
+                    result = sendemail.sendEmail("Command failed","Bad command or authentication code received: %s"%str(event[1]))
+                    if result != True:
+                        eventQueue.put(('Log','Mail send failed: %s'%result))
                     eventQueue.put(('Log','Mail not authenticated or bad command: %s'%str(event[1])))
                     badCommandLimit = int(fileconfig.config.get('EMAIL','BAD_COMMAND_LIMIT'))
                     if badCommandLimit > 0 and badCommands >= badCommandLimit:
@@ -942,9 +1010,8 @@ class lockwatcher(threading.Thread):
                     continue
             elif eventType == 'reloadConfig':
                 fileconfig.reloadConfig()
-                if 'keyboardMonitor' in threadDict.keys() and threadDict['keyboardMonitor'].is_alive() == True:
-                    threadDict['keyboardMonitor'].reloadConfig()
-                eventQueue.put(('Log','Configreload forced'))  #debugmode
+                if isRunning('keyboardMonitor',threadDict): threadDict['keyboardMonitor'].reloadConfig()
+                eventQueue.put(('Log','Config reload forced'))  #debugmode
                 
                 
             elif eventType == 'newListener':
@@ -957,7 +1024,7 @@ class lockwatcher(threading.Thread):
                     eventQueue.put(('Log','Error: Failed to connect to client port: '+str(port)))
                     continue
                 
-                s.send(b'True@')
+                s.send(b'True@@')
                 listeners.append(s)
                 
             else:
@@ -974,12 +1041,12 @@ def createLockwatcher():
         
     monitorThread = lockwatcher()
     
-import cx_Logging #here so cx_Freeze adds the .pyd for sm.exe to use
+import cx_Logging #including here so cx_Freeze adds the .pyd for sm.exe to use
 import servicemanager
  
 class lockwatcherSvc (object):
     def __init__(self):
-        socket.setdefaulttimeout(60)
+        socket.setdefaulttimeout(60.0)
         self.running = True
         
     def Initialize(self, configFileName):
@@ -1015,8 +1082,8 @@ class lockwatcherSvc (object):
             time.sleep(2) 
 
 def plog(sf):
-        fd = open(fileconfig.config.get('TRIGGERS','logfile'),'a+')
         try:
+            fd = open('c:\loglock.txt','a+')
             fd.write(time.strftime('[%x %X] ')+str(sf)+'\n') 
             fd.close()
         except:

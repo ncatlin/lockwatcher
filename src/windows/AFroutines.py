@@ -3,7 +3,7 @@ Created on 26 Aug 2013
 
 @author: Aia Catlin
 '''
-import os, ctypes, subprocess
+import os, ctypes, subprocess, _winreg, threading, sys
 import fileconfig, hardwareconfig
 
 def lockScreen():
@@ -12,28 +12,57 @@ def lockScreen():
 def standardShutdown():
     shutdownPath = 'shutdown.exe' #probably better to find+use full path
     subprocess.call([shutdownPath,"-s"])
-    
+
+class execScript(object):
+    def __init__(self, script):
+        self.cmd = script
+        self.process = None
+
+    def run(self, timeout):
+        def target():
+            self.process = subprocess.Popen(self.cmd, shell=True)
+            self.process.communicate()
+
+        thread = threading.Thread(target=target)
+        thread.start()
+        
+        if timeout <= 0: timeout=None
+        thread.join(timeout)
+        
+        #try to terminate it but we don't really care, shutdown is going to happen anyway
+        if thread.is_alive():
+            self.process.terminate()
+            thread.join()
+
 def emergency():
-    #if not locked
-    if hardwareconfig.checkLock()==False:
-        lockScreen()
-    
-    #truecrypt forces volume dismount and discards any key data
-    if fileconfig.config['TRIGGERS']['dismount_tc'] == 'True':
-        tcPath  = fileconfig.config.get('TRIGGERS','tc_path')
-        try:
-            subprocess.call([tcPath,"/dismount","/force","/wipecache","/quit","/silent"])
-        except: pass 
-    
-    if fileconfig.config.get('TRIGGERS','exec_shellscript') == 'True':
-        try:
-            scriptPath = os.getcwd()+'\sd.bat'
-            if os.path.exists(scriptPath): 
-                timeLimit = fileconfig.config.get('TRIGGERS','script_timeout')
-                scriptProcess = subprocess.Popen(scriptPath,shell=True,timeout=timeLimit)
-                scriptProcess.wait()
-        except: pass
-    
+    try:
+
+        if hardwareconfig.checkLock()==False: lockScreen()
+        
+        #truecrypt forces volume dismount and discards any key data
+        if fileconfig.config.get('TRIGGERS','dismount_tc') == 'True':
+            tcPath  = fileconfig.config.get('TRIGGERS','tc_path')
+            try:
+                subprocess.call([tcPath,"/dismount","/force","/wipecache","/quit","/silent"])
+            except: pass 
+        
+        if fileconfig.config.get('TRIGGERS','exec_shellscript') == 'True':
+                try:
+                    key = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,"SOFTWARE\Lockwatcher")
+                    scriptPath = str(_winreg.QueryValueEx(key,'SDScript')[0])
+                except:
+                    key = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,"SOFTWARE\Wow6432Node\Lockwatcher")
+                    scriptPath = str(_winreg.QueryValueEx(key,'SDScript')[0])
+        
+                if os.path.exists(scriptPath): 
+                    try:
+                        timeLimit = float(fileconfig.config.get('TRIGGERS','script_timeout'))
+                    except: timelimit = 5.0
+                    thread = execScript(scriptPath)
+                    thread.run(timeout=timeLimit)
+    except:
+        pass
+
     #shutdown: force application close, no timeout
     shutdownPath = 'shutdown.exe' #maybe better to find+use full path
     subprocess.call([shutdownPath,"-s","-t","00","-f"])

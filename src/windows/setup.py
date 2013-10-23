@@ -10,9 +10,9 @@ setup(
     executables = [Executable("lockwatcher-gui.py", base = "Win32GUI",icon='favicon.ico'),
                    Executable('serviceconfig.py', base='Win32Service',targetName='LockWatcherSvc.exe')],
     data_files=[('', ['favicon.ico']),
-                ('', ['btscanner.exe','chastrigger.exe','roomtrigger.exe','install-interception.exe','pythonservice.exe']),
+                ('', ['btscanner.exe','chastrigger.exe','roomtrigger.exe','install-interception.exe']),
                 ('', ['roomcam.png','chascam.png','camid.png']),
-                ('', ['cygwin1.dll','interception.dll'])
+                ('', ['cygwin1.dll','interception.32.dll','interception.64.dll'])
                 ],
     options = {'build_exe': {'includes': ['devdetect']}},
     

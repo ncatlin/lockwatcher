@@ -20,7 +20,7 @@ def validHMAC(code,command):
             
             validHashes = []
             for validTime in validTimes:
-                validHashes = validHashes + [hmac.new(secret+bytes(str(command),'UTF-8'),bytes(validTime,'UTF-8'),hashlib.sha1)]
+                validHashes = validHashes + [hmac.new(secret+str(command),validTime,hashlib.sha1)]
             
             validCodes = []
             for h in validHashes:
@@ -36,17 +36,17 @@ def doSend(msg):
     try:
         s = smtplib.SMTP(config.get('EMAIL','email_smtp_host'),timeout=4)
         s.login(config.get('EMAIL','email_username'), config.get('EMAIL','email_password'))
-        s.sendmail(msg['To'],config.get('EMAIL','alert_email_address'), msg.as_string())
-        print('Email Sent')
+        s.sendmail(msg['To'],msg['From'], msg.as_string())
         return True  
     except gaierror:
-        print('smtp connect error')
+        return 'SMTP connect error'
     except smtplib.SMTPAuthenticationError:
-        print('smtp authentication error')
+        return 'SMTP authentication error'
     except smtplib.SMTPException as e:
-        print('smtp error :%s'%e)
+        return 'SMTP error :%s'%e
         
-
+#takes subject/message strings, optional attachment filepath
+#returns True if ok or string describing error
 def sendEmail(subject,message,attachment=None):
 
     if attachment == None:
@@ -61,7 +61,7 @@ def sendEmail(subject,message,attachment=None):
         msg.attach(part)
         
     msg['Subject'] = subject
-    msg['From'] = config.get('EMAIL','COMMAND_EMAIL_ADDRESS')
+    msg['From'] = config.get('EMAIL','SENDER_EMAIL_ADDRESS')
     msg['To'] = config.get('EMAIL','ALERT_EMAIL_ADDRESS')
     
-    doSend(msg)
+    return doSend(msg)

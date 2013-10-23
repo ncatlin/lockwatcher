@@ -10,9 +10,7 @@ import socket, subprocess
 import re, os, time
 import string, random, threading
  
-import devdetect
 import fileconfig, hardwareconfig
-from fileconfig import config
 import winsockbtooth
 import sendemail
 from pythoncom import CoInitialize, CoUninitialize
@@ -25,6 +23,10 @@ import FileDialog
 import _winreg
 from PIL import Image, ImageTk
 import win32api
+
+TRIG_LOCKED = 0
+TRIG_ALWAYS = 1
+TRIG_NEVER = 2
 
 lockStates = ('Screen Locked','Anytime','Never')
 safeLockStates = ('Screen Locked','Never')
@@ -55,9 +57,10 @@ optionCategories = {OPT_STATUS:'Status',
 VERBOSELOGS = False
 
 #run lockwatcher as a thread instead of a service
-DEBUGMODE = False
-CREATELW = False
+DEBUGMODE = True
+CREATELW = True
 if DEBUGMODE == True:
+    import devdetect
     if CREATELW == True:
         devdetect.createLockwatcher()
         devdetect.monitorThread.start()
@@ -65,6 +68,7 @@ if DEBUGMODE == True:
 lwMonitorThread = None
 
 root = Tk()
+root.update()
 root.wm_iconbitmap('favicon.ico')
 
 s = ttk.Style()
@@ -167,7 +171,7 @@ class updateListenThread(threading.Thread):
                     self.logCallback('Disconnected from lockwatcher service',redrawStatus=True)
                     break
                 
-                for msg in data.split('@'):
+                for msg in data.split('@@'):
                     if msg == '': continue
                     if conEstablished == False:
                         if msg == 'True':
@@ -207,6 +211,28 @@ class updateListenThread(threading.Thread):
 def writeConfig():
     fileconfig.writeConfig()
     sendToLockwatcher('reloadConfig')
+
+#todo: one of these probably needs deleting
+def tktrigStateChange(combo):
+    LOCKED = fileconfig.config.get('TRIGGERS','lockedtriggers').split(',')
+    ALWAYS = fileconfig.config.get('TRIGGERS','alwaystriggers').split(',')
+    
+    new_trigger = combo.widget.current()
+    trigger_type = combo.widget._name.upper()
+    
+    if trigger_type in LOCKED:
+        LOCKED.remove(trigger_type)
+    if trigger_type in ALWAYS:
+        ALWAYS.remove(trigger_type)
+                
+    if new_trigger == TRIG_LOCKED:
+        LOCKED.append(trigger_type)
+    elif new_trigger == TRIG_ALWAYS:
+        ALWAYS.append(trigger_type)
+    
+    fileconfig.config.set('TRIGGERS','lockedtriggers',str(LOCKED).strip("[]").replace("'","").replace(" ",""))
+    fileconfig.config.set('TRIGGERS','alwaystriggers',str(ALWAYS).strip("[]").replace("'","").replace(" ",""))
+    writeConfig()
 
 def sendToLockwatcher(msg):
         s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
@@ -278,15 +304,14 @@ class MainWindow(Frame):
         if self.kbdThread != None:
             self.kbdThread.terminate()
             self.kbdThread = None
-            #steal each others keys if kbd monitor and config run at same time, 
-            if self.restartKBD == True: 
-                sendToLockwatcher('%s:%s'%('startMonitor','killSwitch'))
             
         if self.tempThread != None:
             self.tempThread.terminate()
             self.tempThread = None
-            
+    
+        sendToLockwatcher('reloadConfig')
         self.draw_selected_panel(self.windowFrame)  
+        root.minsize(root.winfo_width(), root.winfo_height())
         
     def draw_selected_panel(self,parent):
         
@@ -295,8 +320,12 @@ class MainWindow(Frame):
         self.settingFrame = Frame(parent)
         self.settingFrame.pack(side=RIGHT,fill=BOTH,expand=YES)
         
-        index = self.listbox.curselection()
-        label = self.listbox.get(index)
+        try:
+            index = self.listbox.curselection()
+            label = self.listbox.get(index)
+        except:
+            label = optionCategories[OPT_STATUS]
+            
         if label == optionCategories[OPT_STATUS]:
             self.createStatusPanel(self.settingFrame)
         elif label == optionCategories[OPT_LOGS]:
@@ -338,6 +367,15 @@ class MainWindow(Frame):
         
         self.sStatusText = StringVar()
         Label(parent,textvariable=self.sStatusText).pack(pady=5)
+        
+        testMode = fileconfig.config.get('TRIGGERS','test_mode')
+        self.testModeVar = StringVar()
+        if testMode == 'True': self.testModeVar.set('True')
+        else: self.testModeVar.set('False')
+        testModeCheck = Checkbutton(parent,text="Enable Test Mode", variable = self.testModeVar,
+                                    onval='True',offval='False',command=(lambda: self.changeCheckBox('TRIGGERS:test_mode',self.testModeVar)))
+        createToolTip(testModeCheck,'Instead of triggering a shutdown, lockwatcher will instead only log trigger activation')
+        testModeCheck.pack()
         
         self.threadFrames = Frame(parent)
         
@@ -557,11 +595,11 @@ class MainWindow(Frame):
         
     def createLogsPanel(self,parent):
         logFileFrame = Frame(parent)
-        logFileFrame.pack(side=TOP,fill=X,expand=YES)
+        logFileFrame.pack(side=TOP,fill=X)
         Label(logFileFrame,text='Logfile location:').pack(side=LEFT)
         
         logPath = StringVar()
-        logPath.set(config.get('TRIGGERS','logfile'))
+        logPath.set(fileconfig.config.get('TRIGGERS','logfile'))
         
         logfileEntry = Entry(logFileFrame,textvariable=logPath,width=40)
         logfileEntry.pack(side=LEFT,fill=X,expand=YES)
@@ -575,7 +613,6 @@ class MainWindow(Frame):
         scrollbar = Scrollbar(msgFrame)
         scrollbar.pack(side=RIGHT, fill=Y)
         
-        #todo: resize with window
         messageListB = Text(msgFrame,width=60,height=21,yscrollcommand=scrollbar.set,wrap=WORD)
         messageListB.pack(side=LEFT,expand=YES,fill=BOTH)
         self.messageListB = messageListB
@@ -615,8 +652,6 @@ class MainWindow(Frame):
         self.messageListB.insert(0.0,message)
         self.messageListB.config(state=DISABLED)
             
-
-    
     def newLog(self,msg,redrawStatus=False):
         if redrawStatus == True and self.drawingStatus == False:
             self.doRedrawStatus.set(1)
@@ -625,20 +660,22 @@ class MainWindow(Frame):
             try:
                 self.addMessage(msg)
             except: pass
+            
     def createBluetoothPanel(self,parent):
-        Label(parent,text='Lockwatcher will establish a connection to this bluetooth device.\
-        \nShutdown will be triggered if the connection is lost.').pack()
+        self.master.minsize(400, 500)
+        Label(parent,anchor=CENTER,text='Lockwatcher will establish a connection to this bluetooth device.').pack()
+        Label(parent,anchor=CENTER,text='Shutdown will be triggered if the connection is lost.').pack()
         BTBox = ttk.LabelFrame(parent,text="Bluetooth devices")
         BTBox.pack(side=TOP, fill=BOTH, expand=YES)
         
         self.DevIDDict = {}
         
+        #refill list with results of a previous scan
         BTDevList = Listbox(BTBox)
         if len(self.DevIDDict.keys()) > 0:
             for idx,dev in self.DevIDDict.items():
                 BTDevList.insert(idx,"Name: %s    ID: %s"%(dev[1],dev[0]))
 
-        
         BTDevList.selection_set(0)
         BTDevList.pack(side=TOP, fill=BOTH, expand=YES)
         BTDevList.bind('<<ListboxSelect>>', self.BTDevSelected)
@@ -658,12 +695,12 @@ class MainWindow(Frame):
         
         devIDFrame = Frame(devInfo)
         devIDFrame.pack(side=LEFT)
-        devInfoLabel = Label(devIDFrame,text="Current Device",anchor=CENTER)
+        devInfoLabel = Label(devIDFrame,text="Current Device Address",anchor=CENTER)
         devInfoLabel.pack(side=TOP,fill=X)
         
         devIDVar = StringVar()
         self.devIDVar = devIDVar
-        devIDVar.set(config.get('TRIGGERS','bluetooth_device_id'))
+        devIDVar.set(fileconfig.config.get('TRIGGERS','bluetooth_device_id'))
         devIDVar.trace("w", lambda name, index, mode, devIDVar=devIDVar: self.changeEntryBox('TRIGGERS:bluetooth_device_id',self.devIDVar))
         
         devInfoID = Entry(devIDFrame,textvariable=devIDVar,justify=CENTER)
@@ -686,14 +723,13 @@ class MainWindow(Frame):
         
         triggerName = 'E_BLUETOOTH'
         trigBox =  ttk.Combobox(triggerFrame,values=lockStates,state='readonly',name=triggerName.lower())
-        if triggerName in config.get('TRIGGERS','lockedtriggers').split(','):
+        if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
-        elif triggerName in config.get('TRIGGERS','alwaystriggers').split(','):
+        elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
-        
+        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
         
         
     def BTDevSelected(self,listbox):
@@ -702,18 +738,15 @@ class MainWindow(Frame):
             deviceInfo = self.BTDevList.get(item).split()
             if deviceInfo[0] == 'ID:':
                 self.devIDVar.set(deviceInfo[1])
-                config.set('TRIGGERS','bluetooth_device_id',deviceInfo[1])  
+                fileconfig.config.set('TRIGGERS','bluetooth_device_id',deviceInfo[1])  
                 writeConfig()
                 break
             
-            
     def BTDoScan(self,btn):
-        print("launching scan thread")
         self.DevIDDict = {}
         self.scanBtnText.set('Scanning...')
         self.BTScan = hardwareconfig.BTScanThread(self.BTGotDevices)
         self.BTScan.start()
-        print("Scan thread launched")
     
     def BTGotDevices(self,out):
         self.BTDevList.delete(0,self.BTDevList.size()-1)
@@ -724,16 +757,15 @@ class MainWindow(Frame):
             self.BTDevList.insert(0,'Failed to launch btscanner.exe: %s'%out)
             return
         
-        if out[0] == 0x94: #error flag that cant be used in bluetooth names. usually.
-            errcode = str(out[1:],'UTF-8')
+        if ord(out[0]) == 0x94: #error flag that cant be used in bluetooth names. usually.
+            errcode = out[1:]
             if errcode == '259': #no results found
                 out = out[1:]
+            elif errcode == '6': #invalid handle
+                self.BTDevList.insert(0,'Scan failed: Bluetooth not enabled.')
             else:
-                if errcode == '6': #invalid handle
-                    self.BTDevList.insert(0,'Scan failed: Bluetooth not enabled.')
-                else:
-                    self.BTDevList.insert(0,'Bluetooth scan failed: error %s'%errcode) #todo: make this message nicer
-                return
+                self.BTDevList.insert(0,'Scan failed (error %s). Is Bluetooth working?'%errcode) #todo: make this message nicer
+            return
                 
             
         results = out.split('\n')
@@ -764,7 +796,6 @@ class MainWindow(Frame):
             self.devStatusLabel.config(text="Status: Invalid ID")
             return
         
-        print("Testing ",hex(hexDevID))
         self.devStatusLabel.config(text="Testing...")
         
         self.BTTest = hardwareconfig.BTTestThread(self.BTTestResults,hexDevID)
@@ -782,16 +813,13 @@ class MainWindow(Frame):
             return
         else:
             self.devStatusLabel.config(text="Status: OK")
-    
-    
         
-    
     def createChassisPanel(self,parent):
         
         RAMFrame =  ttk.LabelFrame(parent,text="RAM Low Temperature Detection",borderwidth=1,relief=GROOVE)
         RAMFrame.pack(padx=4,pady=1)
         
-        if not os.path.exists(config.get('TRIGGERS','BALLISTIX_LOG_FILE')):
+        if not os.path.exists(fileconfig.config.get('TRIGGERS','BALLISTIX_LOG_FILE')):
             Label(RAMFrame,text="'Crucial Ballistix' RAM modules must be used in conjunction\nwith the MOD utility to monitor memory temperature",background='red').pack()
         
         
@@ -803,7 +831,7 @@ class MainWindow(Frame):
         createToolTip(FileFrame, "Typically located at 'Program Files\\Crucial\\Ballistix MOD Utility\\temperature.csv'")
 
         MODVar = StringVar()
-        MODVar.set(config.get('TRIGGERS','BALLISTIX_LOG_FILE'))
+        MODVar.set(fileconfig.config.get('TRIGGERS','BALLISTIX_LOG_FILE'))
         MODVar.trace("w", lambda name, index, mode, MODVar=MODVar: self.newMODFile())
         self.MODVar = MODVar
         showKeysBox = Entry(FileFrame,textvariable=MODVar,width=60)
@@ -821,7 +849,7 @@ class MainWindow(Frame):
         Label(minTempFrame,text='Minimum temperature (°C):').pack(side=LEFT)
         
         tempVar = StringVar()
-        tempVar.set(config.get('TRIGGERS','low_temp'))
+        tempVar.set(fileconfig.config.get('TRIGGERS','low_temp'))
         tempVar.trace("w", lambda name, index, mode, tempVar=tempVar: self.newTriggerTemp(tempVar.get()))
         self.tempVar = tempVar
         minTempEntry = Entry(minTempFrame,textvariable=tempVar,width=5,justify=CENTER)
@@ -833,13 +861,13 @@ class MainWindow(Frame):
 
         triggerName = 'E_TEMPERATURE'
         trigBox =  ttk.Combobox(triggerFrame,values=lockStates,state='readonly',name=triggerName.lower())
-        if triggerName in config.get('TRIGGERS','lockedtriggers').split(','):
+        if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
-        elif triggerName in config.get('TRIGGERS','alwaystriggers').split(','):
+        elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack(side=RIGHT)
-        trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
         
         TestFrame = Frame(RAMFrame)
         TestFrame.pack(side=RIGHT)
@@ -849,7 +877,7 @@ class MainWindow(Frame):
         TempList.pack(padx=5,pady=5)
         self.TempList = TempList
         
-        if os.path.exists(config.get('TRIGGERS','BALLISTIX_LOG_FILE')):
+        if os.path.exists(fileconfig.config.get('TRIGGERS','BALLISTIX_LOG_FILE')):
             self.startTempTest()
         
         deviceFrame = ttk.LabelFrame(parent,text="Device Change Monitoring",borderwidth=1,relief=GROOVE)
@@ -862,18 +890,18 @@ class MainWindow(Frame):
         
         triggerName = 'E_DEVICE'
         trigBox =  ttk.Combobox(triggerFrame,values=lockStates,state='readonly',name=triggerName.lower())
-        if triggerName in config.get('TRIGGERS','lockedtriggers').split(','):
+        if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
-        elif triggerName in config.get('TRIGGERS','alwaystriggers').split(','):
+        elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
         
     def newTriggerTemp(self,temp):
         try:
             float(temp)
-            config.set('TRIGGERS','low_temp',temp)
+            fileconfig.config.set('TRIGGERS','low_temp',temp)
             writeConfig()
         except ValueError:
             return #not a valid number
@@ -886,7 +914,7 @@ class MainWindow(Frame):
     def newMODFile(self):
         path = self.MODVar.get()
         if '.csv' in path and os.path.exists(path):
-            config.set('TRIGGERS','BALLISTIX_LOG_FILE',path)
+            fileconfig.config.set('TRIGGERS','BALLISTIX_LOG_FILE',path)
             writeConfig()
             
           
@@ -905,16 +933,15 @@ class MainWindow(Frame):
         
     def createMotionPanel(self,parent):
         ISpyPath = StringVar()
-        if os.path.exists(config.get('TRIGGERS','ispy_path')):
-            ISpyPath.set(config.get('TRIGGERS','ispy_path'))
+        if os.path.exists(fileconfig.config.get('TRIGGERS','ispy_path')):
+            ISpyPath.set(fileconfig.config.get('TRIGGERS','ispy_path'))
         else:
             try:
-                
-                key = winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "iSpy Object List\\shell\\open\\command")
-                value =  winreg.QueryValue(key, None).split('"')[1]
+                key = _winreg.OpenKey(_winreg.HKEY_CLASSES_ROOT, "iSpy Object List\\shell\\open\\command")
+                value =  _winreg.QueryValue(key, None).split('"')[1]
                 if os.path.exists(value):
                     ISpyPath.set(value)
-                    config.get('TRIGGERS','ispy_path',value)
+                    fileconfig.config.set('TRIGGERS','ispy_path',value)
                     writeConfig()
             
             except:
@@ -924,10 +951,10 @@ class MainWindow(Frame):
         
         self.ISpyPath = ISpyPath
         iSpyFrame =  ttk.LabelFrame(parent,text="iSpy application location",borderwidth=1,relief=GROOVE)
-        iSpyFrame.pack()
+        iSpyFrame.pack(fill=X,padx=6)
         
         iSpyEntry = Entry(iSpyFrame,textvariable=ISpyPath,width=40)
-        iSpyEntry.pack(side=LEFT)
+        iSpyEntry.pack(side=LEFT,fill=X,expand=YES,pady=3)
         Button(iSpyFrame,text='Browse',command=self.chooseTCFile).pack(side = RIGHT)
        
         idFrame =  ttk.LabelFrame(parent,text="Camera IDs",borderwidth=1,relief=GROOVE)
@@ -938,7 +965,7 @@ class MainWindow(Frame):
         Label(roomIDFrame,text='iSpy ID number of the room monitoring camera:').pack(side=LEFT)
         roomCamID = StringVar()
         self.roomCamID = roomCamID
-        roomCamID.set(config.get('TRIGGERS','room_cam_id'))
+        roomCamID.set(fileconfig.config.get('TRIGGERS','room_cam_id'))
         roomCamID.trace("w", lambda name, index, mode, roomCamID=roomCamID: self.changeEntryBox('TRIGGERS:room_cam_id',self.roomCamID))
         Entry(roomIDFrame,textvariable=roomCamID,width=5,justify=CENTER).pack(side=RIGHT)
         
@@ -959,20 +986,20 @@ class MainWindow(Frame):
         
         triggerName = 'E_CHASSIS_MOTION'
         trigBox =  ttk.Combobox(triggerFrame,values=lockStates,state='readonly',name=triggerName.lower())
-        if triggerName in config.get('TRIGGERS','lockedtriggers').split(','):
+        if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
-        elif triggerName in config.get('TRIGGERS','alwaystriggers').split(','):
+        elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
         
         
         roomConfig = ttk.LabelFrame(parent,text="Room movement monitoring settings",borderwidth=1,relief=GROOVE)
         roomConfig.pack()
         
         cframe = Frame(roomConfig)
-        cframe.pack()
+        cframe.pack(pady=5)
         Label(cframe,text="Configure iSpy to execute 'roomtrigger.exe' on motion").pack(side=LEFT)
         Button(cframe,text='Show me',command=(lambda: self.exampleShow('room'))).pack(side=RIGHT)
         
@@ -982,24 +1009,19 @@ class MainWindow(Frame):
         
         triggerName = 'E_ROOM_MOTION'
         trigBox =  ttk.Combobox(triggerFrame,values=lockStates,state='readonly',name=triggerName.lower())
-        if triggerName in config.get('TRIGGERS','lockedtriggers').split(','):
+        if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
-        elif triggerName in config.get('TRIGGERS','alwaystriggers').split(','):
+        elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
         
     def exampleShow(self,category):
         d = exampleDialog(root,category)
     
     KCodes = []
-    restartKBD = False
-    def createKeyboardPanel(self,parent):
-        if self.threadStatus['killSwitch'].get():
-            sendToLockwatcher('%s:%s'%('stopMonitor','killSwitch'))
-            self.restartKBD = True
-            
+    def createKeyboardPanel(self,parent):  
         Label(parent,text='Setup a killswitch combination of one or more keys').pack(padx=5)
         
         entryFrame = Frame(parent)
@@ -1027,10 +1049,10 @@ class MainWindow(Frame):
         primaryFrame.pack(pady=5,padx=5)
         
         Label(primaryFrame,text='Reccommended activation: Anytime').pack()
-        Label(primaryFrame,text='"A quick-access panic switch for activation by the user."',width=48).pack()
+        Label(primaryFrame,text='"A quick-access panic switch for activation by the user."',width=50).pack()
         KSLLabel = Label(primaryFrame,text='Current Key Combination:').pack(pady=5)
         comboString = ''
-        for n in config.get('TRIGGERS','kbd_kill_combo_1').split('+'):
+        for n in fileconfig.config.get('TRIGGERS','kbd_kill_combo_1').split('+'):
             if n == '':break
             if int(n) in hardwareconfig.vkDict.keys():
                 comboString = comboString+hardwareconfig.vkDict[int(n)]+'+'
@@ -1050,13 +1072,13 @@ class MainWindow(Frame):
         
         triggerName = 'E_KILL_SWITCH_1'
         trigBox =  ttk.Combobox(triggerFrame,values=lockStates,state='readonly',name=triggerName.lower())
-        if triggerName in config.get('TRIGGERS','lockedtriggers').split(','):
+        if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
-        elif triggerName in config.get('TRIGGERS','alwaystriggers').split(','):
+        elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
         
         secondaryFrame =  ttk.LabelFrame(parent,text="Secondary killswitch",borderwidth=1,relief=GROOVE)
         secondaryFrame.pack(pady=5,padx=5)
@@ -1065,7 +1087,7 @@ class MainWindow(Frame):
         Label(secondaryFrame,text='"A false password containing this key is revealed to attackers."').pack()
         Label(secondaryFrame,text='Current Key Combination:').pack(pady=5)
         comboString = ''
-        for n in config.get('TRIGGERS','kbd_kill_combo_2').split('+'):
+        for n in fileconfig.config.get('TRIGGERS','kbd_kill_combo_2').split('+'):
             if n == '': break
             if int(n) in hardwareconfig.vkDict.keys():
                 comboString = comboString+hardwareconfig.vkDict[int(n)]+'+'
@@ -1080,13 +1102,13 @@ class MainWindow(Frame):
         
         triggerName = 'E_KILL_SWITCH_2'
         trigBox =  ttk.Combobox(triggerFrame,values=lockStates,state='readonly',name=triggerName.lower())
-        if triggerName in config.get('TRIGGERS','lockedtriggers').split(','):
+        if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
-        elif triggerName in config.get('TRIGGERS','alwaystriggers').split(','):
+        elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
         
         if os.path.exists(os.environ['windir']+'\sysnative\drivers\keyboard.sys'):
             frameText='Interception Driver Status: Installed'
@@ -1122,10 +1144,10 @@ class MainWindow(Frame):
             newcombo = newcombo.strip('+')
 
             if number == 1:
-                config.set('TRIGGERS','kbd_kill_combo_1',newcombo)
+                fileconfig.config.set('TRIGGERS','kbd_kill_combo_1',newcombo)
                 self.KS1Label.config(text=self.showKeysBox.get())
             else:
-                config.set('TRIGGERS','kbd_kill_combo_2',newcombo)
+                fileconfig.config.set('TRIGGERS','kbd_kill_combo_2',newcombo)
                 self.KS2Label.config(text=self.showKeysBox.get())
             writeConfig()
             
@@ -1176,7 +1198,7 @@ class MainWindow(Frame):
             trigBox.current(0)
         else: trigBox.current(1)
         trigBox.pack(pady=5,padx=5)
-        trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
         
         buttonFrame = ttk.Labelframe(parent,text='Mouse Buttons',relief=GROOVE)
         buttonFrame.pack(fill=X,side=TOP,padx=4,pady=4)
@@ -1193,7 +1215,7 @@ class MainWindow(Frame):
             trigBox.current(0)
         else: trigBox.current(1)
         trigBox.pack(pady=5,padx=5)
-        trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
     
     def createNetworkPanel(self,parent):
         Label(parent,font='helvetica 10',text=
@@ -1204,7 +1226,7 @@ class MainWindow(Frame):
         
         inFrame =  ttk.LabelFrame(parent,text="Monitor for connection",borderwidth=1,relief=GROOVE)        
         inFrame.pack(side=RIGHT,fill=BOTH, expand=YES,pady=5,padx=5)
-        Label(inFrame,text='Select devices to monitor for connection\neg: Cable insertion').pack()  
+        Label(inFrame,anchor=CENTER,text='Select devices to monitor for connection\neg: Cable insertion').pack()  
         NetDevListBox = Listbox(inFrame, selectmode=MULTIPLE,activestyle=NONE,name='connect',exportselection=0)
         NetDevListBox.insert(0,'Listing network adapters...')
         NetDevListBox.pack(side=TOP, fill=BOTH, expand=YES)
@@ -1216,19 +1238,19 @@ class MainWindow(Frame):
         
         triggerName = 'E_NET_CABLE_IN'
         trigBox =  ttk.Combobox(triggerFrame,values=lockStates,state='readonly',name=triggerName.lower())
-        if triggerName in config.get('TRIGGERS','lockedtriggers').split(','):
+        if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
-        elif triggerName in config.get('TRIGGERS','alwaystriggers').split(','):
+        elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
     
     
         outFrame =  ttk.LabelFrame(parent,text="Monitor for disconnection",borderwidth=1,relief=GROOVE)
         outFrame.pack(side=RIGHT,fill=BOTH, expand=YES,pady=5,padx=5)
         
-        Label(outFrame,text='Select devices to monitor for disconnection\neg: Cable removal, Access point power loss').pack() 
+        Label(outFrame,anchor=CENTER,text='Select devices to monitor for disconnection\neg: Cable removal, Access point power loss').pack() 
         NetDevListBox = Listbox(outFrame, selectmode=MULTIPLE,activestyle=NONE,name='disconnect',exportselection=0)
         NetDevListBox.insert(0,'Listing network adapters...')
         NetDevListBox.pack(side=TOP, fill=BOTH, expand=YES)
@@ -1240,13 +1262,13 @@ class MainWindow(Frame):
         
         triggerName = 'E_NET_CABLE_OUT'
         trigBox =  ttk.Combobox(triggerFrame,values=lockStates,state='readonly',name=triggerName.lower())
-        if triggerName in config.get('TRIGGERS','lockedtriggers').split(','):
+        if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
-        elif triggerName in config.get('TRIGGERS','alwaystriggers').split(','):
+        elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
         
         self.netdevScan = hardwareconfig.netScanThread(self.netDevsEnumerated)
         self.netdevScan.start()
@@ -1259,17 +1281,16 @@ class MainWindow(Frame):
         self.guidDict={}
         devList = []
         for ad in networkAdapters:
-            if ad.PhysicalAdapter == True: 
-                devList.append(ad)
-                self.guidDict[ad.Name] = ad.GUID
+            devList.append(ad)
+            self.guidDict[ad.Name] = ad.GUID
         
         if len(devList) > 0:
             for idx,dev in enumerate(devList):
                 self.NetDevListBoxC.insert(idx,"%s"%(dev.Name))
                 self.NetDevListBoxD.insert(idx,"%s"%(dev.Name))
-                if dev.GUID in config.get('TRIGGERS','adapterConGUIDS').split(';'):
+                if dev.GUID in fileconfig.config.get('TRIGGERS','adapterConGUIDS').split(';'):
                     self.NetDevListBoxC.selection_set(idx) 
-                if dev.GUID in config.get('TRIGGERS','adapterDisconGUIDS').split(';'):
+                if dev.GUID in fileconfig.config.get('TRIGGERS','adapterDisconGUIDS').split(';'):
                     self.NetDevListBoxD.selection_set(idx)    
                     
             self.NetDevListBoxC.bind('<<ListboxSelect>>', self.netDevSelect)
@@ -1288,16 +1309,16 @@ class MainWindow(Frame):
             configString = configString + self.guidDict[adapterName] +';'
         
         if lbox.widget._name == 'connect':
-            config.set('TRIGGERS','adapterConGUIDS',configString)
+            fileconfig.config.set('TRIGGERS','adapterConGUIDS',configString)
         elif lbox.widget._name == 'disconnect':
-            config.set('TRIGGERS','adapterDisconGUIDS',configString)
+            fileconfig.config.set('TRIGGERS','adapterDisconGUIDS',configString)
             
         writeConfig()
     
     def changeCheckBox(self, keyname, val):
         section,key = keyname.split(':')
         newValue = val.get()
-        config[section][key] = str(newValue)
+        fileconfig.config.set(section,key,str(newValue))
         writeConfig()
         
         if keyname == 'EMAIL:enable_remote':
@@ -1308,7 +1329,7 @@ class MainWindow(Frame):
         
     def changeEntryBox(self, keyname, val):
         section,key = keyname.split(':')
-        config[section][key] = str(val.get())
+        fileconfig.config.set(section,key,str(val.get()))
         writeConfig()
         
     testThread = None
@@ -1317,7 +1338,7 @@ class MainWindow(Frame):
         box6.pack()
         
         self.ERCheck = StringVar()
-        if config.get('EMAIL','enable_remote') == 'True': self.ERCheck.set('True')
+        if fileconfig.config.get('EMAIL','enable_remote') == 'True': self.ERCheck.set('True')
         else: self.ERCheck.set('False')
         checkEmailCMD = Checkbutton(box6,text="Enable Remote Control", variable = self.ERCheck,
                                     onval='True',offval='False',command=(lambda: self.changeCheckBox('EMAIL:enable_remote',self.ERCheck)))
@@ -1327,7 +1348,7 @@ class MainWindow(Frame):
         
         
         self.EACheck = StringVar()
-        if config.get('EMAIL','email_alert') == 'True': self.EACheck.set('True')
+        if fileconfig.config.get('EMAIL','email_alert') == 'True': self.EACheck.set('True')
         else: self.EACheck.set('False')
         checkEmailSend = Checkbutton(box6,text="Send Shutdown Alerts",variable=self.EACheck,
                                      onval='True',offval='False',command=(lambda: self.changeCheckBox('EMAIL:email_alert',self.EACheck)))
@@ -1336,7 +1357,7 @@ class MainWindow(Frame):
         
         
         emailAccFrame =  ttk.LabelFrame(parent,text="Email Account Settings",borderwidth=1,relief=GROOVE)
-        emailAccFrame.pack(padx=2,fill=X,expand=YES)
+        emailAccFrame.pack(padx=6,fill=X,expand=YES)
         
         Label(emailAccFrame,text='Used to send alerts and receive\n commands from your remote device').pack()
         
@@ -1346,7 +1367,7 @@ class MainWindow(Frame):
         IMAPServerL = Label(box1,text='IMAP Server:',width=15)
         IMAPServerL.pack(side=LEFT)
         IMVar = StringVar()
-        IMVar.set(config.get('EMAIL','EMAIL_IMAP_HOST'))
+        IMVar.set(fileconfig.config.get('EMAIL','EMAIL_IMAP_HOST'))
         IMVar.trace("w", lambda name, index, mode, IMVar=IMVar: self.changeEntryBox('EMAIL:EMAIL_IMAP_HOST',IMVar))
         IMAPServerE = Entry(box1,textvariable=IMVar)
         IMAPServerE.pack(side=RIGHT,fill=X,expand=YES)
@@ -1357,7 +1378,7 @@ class MainWindow(Frame):
         SMTPServerL = Label(box2,text='SMTP Server:',width=15)
         SMTPServerL.pack(side=LEFT)
         IMVar = StringVar()
-        IMVar.set(config.get('EMAIL','EMAIL_SMTP_HOST'))
+        IMVar.set(fileconfig.config.get('EMAIL','EMAIL_SMTP_HOST'))
         IMVar.trace("w", lambda name, index, mode, IMVar=IMVar: self.changeEntryBox('EMAIL:EMAIL_SMTP_HOST',IMVar))
         SMTPServerE = Entry(box2, textvariable=IMVar)
         SMTPServerE.pack(side=LEFT,fill=X,expand=YES)
@@ -1365,20 +1386,20 @@ class MainWindow(Frame):
         box3 = Frame(emailAccFrame)
         box3.pack(fill=X,expand=YES)
         
-        unameL = Label(box3,text='Account Username:',width=15)
+        unameL = Label(box3,text='Account Username:',width=20)
         unameL.pack(side=LEFT)
         IMVar = StringVar()
-        IMVar.set(config.get('EMAIL','EMAIL_USERNAME'))
+        IMVar.set(fileconfig.config.get('EMAIL','EMAIL_USERNAME'))
         IMVar.trace("w", lambda name, index, mode, IMVar=IMVar: self.changeEntryBox('EMAIL:EMAIL_USERNAME',IMVar))
         unameE = Entry(box3, textvariable=IMVar)
         unameE.pack(side=RIGHT,fill=X,expand=YES)
         
         box4 = Frame(emailAccFrame)
         box4.pack(fill=X,expand=YES)
-        passwordL = Label(box4,text='Account Password:',width=15)
+        passwordL = Label(box4,text='Account Password:',width=20)
         passwordL.pack(side=LEFT)
         IMVar = StringVar()
-        IMVar.set(config.get('EMAIL','EMAIL_PASSWORD'))
+        IMVar.set(fileconfig.config.get('EMAIL','EMAIL_PASSWORD'))
         IMVar.trace("w", lambda name, index, mode, IMVar=IMVar: self.changeEntryBox('EMAIL:EMAIL_PASSWORD',IMVar))
         passwordE = Entry(box4, textvariable=IMVar,show='*',width=17)
         passwordE.pack(side=LEFT,fill=X,expand=YES)
@@ -1402,40 +1423,50 @@ class MainWindow(Frame):
         testSetB.pack()
         
         boxOtherEmail = Frame(parent)
-        boxOtherEmail.pack(fill=X,expand=YES)
+        boxOtherEmail.pack(fill=X,expand=YES,padx=5)
         
         boxCR = Frame(boxOtherEmail)
         boxCR.pack(fill=X,expand=YES)
         createToolTip(boxCR,'Lockwatcher will examine commands claiming to be from this email address')
         
-        comRecL = Label(boxCR,text='Command Sender Address:',width=17)
+        comRecL = Label(boxCR,text='Command Sender Email:',width=22)
         comRecL.pack(side=LEFT)
         IMVar = StringVar()
         comRecE = Entry(boxCR,textvariable=IMVar)
         comRecE.pack(side=RIGHT,fill=X,expand=YES)
-        IMVar.set(config.get('EMAIL','COMMAND_EMAIL_ADDRESS'))
+        IMVar.set(fileconfig.config.get('EMAIL','COMMAND_EMAIL_ADDRESS'))
         IMVar.trace("w", lambda name, index, mode, IMVar=IMVar: self.changeEntryBox('EMAIL:COMMAND_EMAIL_ADDRESS',IMVar))
         
         boxAR = Frame(boxOtherEmail)
         boxAR.pack(fill=X,expand=YES)
         createToolTip(boxAR,'Lockmonitor will send alerts, command responses and captured images to this email address.')
-        authSecretL = Label(boxAR,text='Alert Email Address:',width=17)
+        authSecretL = Label(boxAR,text='Alert Email Address:',width=22)
         authSecretL.pack(side=LEFT)
         IMVar = StringVar()
-        IMVar.set(config.get('EMAIL','ALERT_EMAIL_ADDRESS'))
+        IMVar.set(fileconfig.config.get('EMAIL','ALERT_EMAIL_ADDRESS'))
         IMVar.trace("w", lambda name, index, mode, IMVar=IMVar: self.changeEntryBox('EMAIL:ALERT_EMAIL_ADDRESS',IMVar))
         alertRecE = Entry(boxAR, textvariable=IMVar)
         alertRecE.pack(side=RIGHT,fill=X,expand=YES)
         
+        boxSEA = Frame(boxOtherEmail)
+        boxSEA.pack(fill=X,expand=YES)
+        createToolTip(boxSEA,'Lockmonitor will send alerts, command responses and captured images from this email address.')
+        authSecretL = Label(boxSEA,text='Responder Email Address:',width=22)
+        authSecretL.pack(side=LEFT)
+        IMVar = StringVar()
+        IMVar.set(fileconfig.config.get('EMAIL','sender_EMAIL_ADDRESS'))
+        IMVar.trace("w", lambda name, index, mode, IMVar=IMVar: self.changeEntryBox('EMAIL:sender_EMAIL_ADDRESS',IMVar))
+        alertRecE = Entry(boxSEA, textvariable=IMVar)
+        alertRecE.pack(side=RIGHT,fill=X,expand=YES)
         
         box5 = Frame(boxOtherEmail)
         createToolTip(box5,'Secret code used by Lockwatcher to authenticate remote commands')
         box5.pack(fill=X,expand=YES)
         
-        authSecretL = Label(box5,text='Authentication Secret:',width=17)
+        authSecretL = Label(box5,text='Authentication Secret:',width=22)
         authSecretL.pack(side=LEFT)
         IMVar = StringVar()
-        IMVar.set(config.get('EMAIL','EMAIL_SECRET'))
+        IMVar.set(fileconfig.config.get('EMAIL','EMAIL_SECRET'))
         IMVar.trace("w", lambda name, index, mode, IMVar=IMVar: self.changeEntryBox('EMAIL:EMAIL_SECRET',IMVar))
         self.secretCode = IMVar
         authSecretE = Entry(box5, textvariable=IMVar)
@@ -1448,12 +1479,12 @@ class MainWindow(Frame):
         box7 = Frame(boxOtherEmail)
         createToolTip(box7,'Number of bad commands to cause an emergency shutdown. 0 to disable.')
         box7.pack()
-        numFailedL = Label(box7,text='Failed Command Limit:',width=17)
+        numFailedL = Label(box7,text='Failed Command Limit:',width=22)
         numFailedL.pack(side=LEFT)
         IMVar = StringVar()
-        IMVar.set(config.get('EMAIL','BAD_COMMAND_LIMIT'))
+        IMVar.set(fileconfig.config.get('EMAIL','BAD_COMMAND_LIMIT'))
         IMVar.trace("w", lambda name, index, mode, IMVar=IMVar: self.changeEntryBox('EMAIL:BAD_COMMAND_LIMIT',IMVar))
-        numFailedE = Entry(box7, textvariable=IMVar,justify=CENTER, width = 5)
+        numFailedE = Entry(box7, textvariable=IMVar,justify=CENTER, width=5)
         numFailedE.pack(side=RIGHT)
     
     def genSecret(self):
@@ -1483,11 +1514,11 @@ class MainWindow(Frame):
     def createShutdownPanel(self,parent):
         Label(parent,text='Shutdown Actions').pack()
         
-        exeFrame = Frame(parent,borderwidth=2,relief=GROOVE)
+        exeFrame = ttk.LabelFrame(parent,text='Truecrypt',borderwidth=2,relief=GROOVE)
         exeFrame.pack()
         
         self.TCCheck = StringVar()
-        if config.get('TRIGGERS','dismount_tc') == 'True': self.TCCheck.set('True')
+        if fileconfig.config.get('TRIGGERS','dismount_tc') == 'True': self.TCCheck.set('True')
         else: self.TCCheck.set('False')
         tcCheck = Checkbutton(exeFrame,text="Dismount Truecrypt volumes",variable=self.TCCheck,
                                      onval='True',offval='False',
@@ -1495,19 +1526,18 @@ class MainWindow(Frame):
         tcCheck.pack()
         
         TCPath = StringVar()
-        if os.path.exists(config.get('TRIGGERS','tc_path')):
-            TCPath.set(config.get('TRIGGERS','tc_path'))
+        if os.path.exists(fileconfig.config.get('TRIGGERS','tc_path')):
+            TCPath.set(fileconfig.config.get('TRIGGERS','tc_path'))
         else:
             try:
                 key = winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "TrueCryptVolume\\Shell\\open\\command")
                 value =  winreg.QueryValue(key, None).split('"')[1]
                 if os.path.exists(value):
                     TCPath.set(value)
-                    config.set('TRIGGERS','tc_path',value)
+                    fileconfig.config.set('TRIGGERS','tc_path',value)
                     writeConfig()
             except:
                 TCPath.set('Truecrypt executable not found')
-        
         
         
         Label(exeFrame,text='Truecrypt Executable:').pack(side=TOP)
@@ -1516,30 +1546,52 @@ class MainWindow(Frame):
         Button(exeFrame,text='Browse',command=self.chooseTCFile).pack(side = RIGHT)
         self.TCPath = TCPath
         
+        scriptFrame = ttk.LabelFrame(parent,text='Custom shutdown batch script',borderwidth=2,relief=GROOVE)
+        scriptFrame.pack()
         
         self.ESCheck = StringVar()
-        if config.get('TRIGGERS','exec_shellscript') == 'True': self.ESCheck.set('True')
+        if fileconfig.config.get('TRIGGERS','exec_shellscript') == 'True': self.ESCheck.set('True')
         else: self.ESCheck.set('False')
-        execCustom = Checkbutton(parent,text="Execute Custom Script on Shutdown", variable = self.ESCheck,
+        execCustom = Checkbutton(scriptFrame,text="Execute Custom Script on Shutdown", variable = self.ESCheck,
                                     onval='True',offval='False',command=(lambda: self.changeCheckBox('TRIGGERS:exec_shellscript',self.ESCheck)))
-        createToolTip(execCustom, "Lockwatcher will check the specified IMAP inbox for remote commands")
+        createToolTip(execCustom, "On emergency shutdown, the script below will be executed as the last action before the system is powered off.")
         execCustom.pack()
         
-        Label(parent,text='Custom shutdown batch script:',anchor=W,width=80).pack()
-
-        sdScript = Text(parent,width=65,height=20)
-        sdScript.pack(fill=BOTH,expand=YES,pady=5,padx=5)
+        timeoutFrame = Frame(scriptFrame)
+        timeoutFrame.pack()
         
-        if not os.path.exists('sd.bat'):
+        scriptTO = StringVar()
+        scriptTO.set(fileconfig.config.get('TRIGGERS','script_timeout'))
+        Label(timeoutFrame,text='Script maximum running time (seconds):').pack(side=LEFT)
+        
+        scriptTimeoutE = Entry(timeoutFrame,textvariable=scriptTO,width=8,background='white')
+        createToolTip(scriptTimeoutE,'Lockwatcher will wait this many seconds for the script to complete before shutting down.\n0 = Unlimited.')
+        scriptTimeoutE.pack(side=RIGHT,padx=4)
+        
+        changeTO = lambda name, index, mode, scriptTO=scriptTO: self.changeEntryBox('TRIGGERS:script_timeout',scriptTO)
+        scriptTO.trace("w", changeTO)
+        
+        scriptPath = None
+        try:
+            key = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,"SOFTWARE\Lockwatcher")
+            scriptPath = str(_winreg.QueryValueEx(key,'SDScript')[0])
+        except:
+            key = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,"SOFTWARE\Wow6432Node\Lockwatcher")
+            scriptPath = str(_winreg.QueryValueEx(key,'SDScript')[0])
+        
+        Label(scriptFrame,text='Custom shutdown batch script:',anchor=W,width=80).pack()
+        sdScript = Text(scriptFrame,width=65,height=20)
+        sdScript.pack(fill=BOTH,expand=YES,pady=5,padx=5)
+        if not os.path.exists(scriptPath):
             try:
-                fd = open('sd.bat','w')
+                fd = open(scriptPath,'w')
                 fd.write('::batch script to execute on emergency shutdown')
                 fd.close()
             except:
-                addMessage('Failed to find or create shutdown batch file in lockwatcher directory')
+                addMessage('Failed to find or create shutdown script')
             
         try:
-            fd = open('sd.bat','r')
+            fd = open(scriptPath,'r')
             battext = fd.read()
             fd.close()
         except:
@@ -1551,7 +1603,14 @@ class MainWindow(Frame):
         saveBtn = Button(parent,text='Save',command=self.writeSDScript).pack()
         
     def writeSDScript(self):
-        fd = open('sd.bat','w')
+        try:
+            key = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,"SOFTWARE\Lockwatcher")
+            scriptPath = str(_winreg.QueryValueEx(key,'SDScript')[0])
+        except:
+            key = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,"SOFTWARE\Wow6432Node\Lockwatcher")
+            scriptPath = str(_winreg.QueryValueEx(key,'SDScript')[0])
+        
+        fd = open(scriptPath,'w')
         fd.write(self.sdScript.get(0.0,END))
         fd.close()
          
@@ -1559,7 +1618,7 @@ class MainWindow(Frame):
         newpath = filedialog.askopenfilename(filetypes=[('Truecrypt.exe','.exe')])
         if newpath != '' and os.path.exists(newpath):
             self.TCPath.set(newpath)
-            config.set('TRIGGERS','tc_path',newpath)
+            fileconfig.config.set('TRIGGERS','tc_path',newpath)
             writeConfig()
         
 

@@ -8,5 +8,5 @@ DISPLAY_NAME = '%s'
 MODULE_NAME = 'devdetect'
 CLASS_NAME = 'lockwatcherSvc'
 DESCRIPTION = 'Monitors for possible tampering and reacts accordingly'
-AUTO_START = False
+AUTO_START = True
 SESSION_CHANGES = True
