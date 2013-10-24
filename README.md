@@ -40,7 +40,7 @@ lockwatcher-gui
 
 *On fedora and its brethren:*
 ```
-sudo yum install python3 python3-setuptools python3-tkinter python3-pillow ifplugd python3-dbus
+sudo yum install python3 python3-setuptools python3-tkinter python3-pillow ifplugd python3-dbus python3-gobject
 
 sudo easy_install-3.3 IMAPClient pyudev
 
