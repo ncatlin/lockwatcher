@@ -55,6 +55,10 @@ sudo lockwatcherd start
 lockwatcher-gui
 ```
 
+If your camera monitors give an error about needing libjpeg.so.8, you may want to install libjpeg8. 
+
+http://rpm.pbone.net/index.php3?stat=3&search=libjpeg8&srodzaj=3
+
 Windows Installation (Windows 7, 64 bit)
 ================
 *The free, open-source iSpy software is required for room and chassis motion detection
