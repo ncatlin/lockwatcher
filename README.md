@@ -18,32 +18,24 @@ Windows 64-bit https://github.com/ncatlin/lockwatcher/raw/master/lockwatcher-set
 Linux Installation
 ================
 
-Install the dependencies, extract the software, install, run, configure
+Install the dependencies
 
 *On Debian/-buntu/mint/etc:*
 ```
 sudo apt-get install python3 python3-setuptools python3-tk python3-pillow ifplugd python3-dbus
 
 sudo easy_install3 IMAPClient pyudev
-
-tar -xvzf Lockwatcher*
-
-cd Lockwatcher*
-
-sudo python3 setup.py install
-
-sudo lockwatcherd start
-
-lockwatcher-gui
 ```
 
-
-*On fedora and its brethren:*
+*On fedora*
 ```
 sudo yum install python3 python3-setuptools python3-tkinter python3-pillow ifplugd python3-dbus python3-gobject
 
 sudo easy_install-3.3 IMAPClient pyudev
+```
 
+Extract the software, install, run, configure
+```
 tar -xvzf Lockwatcher*
 
 cd Lockwatcher*
@@ -54,6 +46,8 @@ sudo lockwatcherd start
 
 lockwatcher-gui
 ```
+
+If python3-imaging or python3-pillow isn't available then just skip it.
 
 If your camera monitors give an error about needing libjpeg.so.8, you may want to install libjpeg8. 
 
