@@ -40,18 +40,23 @@ droid.dialogSetPositiveButtonText("Send")
 droid.dialogShow()
 command = droid.dialogGetResponse().result['value']
 
+#email account login details
 HOST = 'CHANGEME'
 USERNAME = 'CHANGEME'
 PASSWORD = 'CHANGEME'
+#myphone@domain - the 'alert sender address' field in lockwatcher
+FROM_ADDR = 'CHANGEME'
+#the address of the imap account monitored by lockwatcher
+TO_ADDR = 'CHANGEME'
  
 s = smtplib.SMTP(HOST)
 s.login(USERNAME, PASSWORD)
  
 msg = email.mime.Text.MIMEText('')
 msg['Subject'] = str(command)+' '+genCode(command)
-msg['From'] = 'YourPhone'
-msg['To'] = 'Changeme'
-s.sendmail(msg['To'],USERNAME, msg.as_string())
+msg['From'] = FROM_ADDR
+msg['To'] = TO_ADDR
+s.sendmail(msg['From'],msg['To'], msg.as_string())
  
 
 droid.makeToast("Command send: check email for reply.")
