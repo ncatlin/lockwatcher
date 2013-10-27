@@ -12,28 +12,33 @@ dbusobj = None
 shuttingDown = False
 emailAlert = False
 
-#have to spawn a nonroot process to do it
+#if we found a screenlocker program then exec that
+#some environments want it done with root privs, most with non-root
+#otherwise throw a few commands at the dbus and hope for the best
 def lockProcess():
-    if fileconfig.DESK_UID != None:
-        os.setuid(fileconfig.DESK_UID)
-        
     lockProgram = fileconfig.LOCKCMD
+    
     try:
-        if lockProgram != None:
-            subprocess.call(lockProgram.split(' '))
+        if lockProgram != None: subprocess.call(lockProgram.split(' '),shell=True)
+    except: pass
+    
+    if fileconfig.DESK_UID != None: os.setuid(fileconfig.DESK_UID)
+    
+    try:
+        if lockProgram != None: subprocess.call(lockProgram.split(' '),shell=True)
+    except: pass
+    
+    try:
+        os.system('qdbus org.gnome.screensaver /ScreenSaver Lock') 
     except:
         pass
     
     try:
-        os.system('qdbus org.kde.screensaver /ScreenSaver Lock') 
+        os.system('qdbus org.freedesktop.screensaver /ScreenSaver Lock') 
     except:
         pass
-    
-    try:
-        os.system('qdbus org.kde.screensaver /ScreenSaver Lock') 
-    except:
-        pass
-    
+
+#have to spawn a nonroot process to do it 
 def lockScreen():
     try:
         P = multiprocessing.Process(target=lockProcess)

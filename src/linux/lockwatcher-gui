@@ -39,16 +39,17 @@ except:
 VERBOSELOGS = False
 
 #runs the daemon as one of our threads so we can attach a debugger
-DEBUGMODE = False
-CREATELW = False
-if DEBUGMODE == True:
-    if CREATELW == True:
+DEBUGMODE = True
+CREATELW = True
+if DEBUGMODE == False:
+    if CREATELW == False:
         import lockwatcherd
         lockwatcherd.createLockwatcher()
         lockwatcherd.monitorThread.start()
         
 lwMonitorThread = None
 root = Tk()
+
 '''the lockwatcher daemon connects to this thread (after receiving 
 a newListener request) to feed us updates and log events
 
@@ -259,6 +260,8 @@ class MainWindow(Frame):
         self.doRedrawStatus.set(0)
         
     def optionClicked(self, event):
+        writeConfig() #save any config changes
+        
         #shutdown monitoring thread if we just left its tab 
         if self.tempThread != None:
             self.tempThread.terminate()
@@ -267,6 +270,7 @@ class MainWindow(Frame):
         #clear recent keys if we left keyboard tab    
         self.recentKCodes = []
         
+        while fileconfig.writing == True: pass
         self.draw_selected_panel(self.windowFrame)  
         
     def draw_selected_panel(self,parent):
@@ -313,6 +317,10 @@ class MainWindow(Frame):
     
     def createStatusPanel(self,parent):
         self.drawingStatus = True
+        
+        if DEBUGMODE == True:
+            Label(parent,text='WARNING: DEBUGMODE ACTIVE',bg='red').pack(pady=5)
+        
         self.sStatusText = StringVar()
         self.sButtonText = StringVar()
         Label(parent,textvariable=self.sStatusText).pack(pady=5)
@@ -492,7 +500,9 @@ class MainWindow(Frame):
         Label(logFileFrame,text='Logfile location:').pack(side=LEFT)
         
         logPath = StringVar()
-        logPath.set(fileconfig.config['TRIGGERS']['logfile'])
+        
+        confLogPath = fileconfig.config['TRIGGERS']['logfile']
+        logPath.set(confLogPath)
         
         logfileEntry = Entry(logFileFrame,textvariable=logPath,width=40)
         logfileEntry.pack(side=LEFT,fill=X,expand=YES)
@@ -529,7 +539,7 @@ class MainWindow(Frame):
             self.logPath.set(path)
             
     def setFilePath(self,path):
-        fileconfig.config['TRIGGERS']['logfile'] = path
+        fileconfig.config['TRIGGERS']['logfile'] = str(path)
         writeConfig() 
             
     #insert message into recent events window
@@ -624,6 +634,14 @@ class MainWindow(Frame):
             except: pass    
         self.pendingLogs = []
         
+        if self.btScanResults != {}:
+            self.processBTDevices()
+            
+        if self.testResults != None:
+            self.processTestResults()
+            
+        
+        
         root.after(500,self.processNewEvents)
     
 
@@ -698,9 +716,7 @@ class MainWindow(Frame):
         else: trigBox.current(2)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
-        
-        
-        
+           
     def BTDevSelected(self,listbox):
         
         for item in self.BTDevList.curselection():
@@ -720,13 +736,20 @@ class MainWindow(Frame):
             self.BTScan = hardwareconfig.BTScanThread(self.BTGotDevices)
             self.BTScan.start()
     
+    btScanResults = {}
     def BTGotDevices(self,out,err):
+        self.btScanResults = {'out':out,'err':err}
+        
+    def processBTDevices(self):
+        out,err = self.btScanResults['out'],self.btScanResults['err']
+        self.btScanResults = {}
+        
         if self.BTScanStatus == 'Running':
             self.BTScanStatus = None
         
             self.scanBtnText.set('Scan for devices')
             
-            self.BTDevList.delete(0,self.BTDevList.size()-1)
+            if self.BTDevList.size() > 0: self.BTDevList.delete(0,self.BTDevList.size()-1)
             
             if 'Device is not available' in str(err):
                 self.BTDevList.insert(0,'Bluetooth not available')
@@ -764,13 +787,18 @@ class MainWindow(Frame):
             self.devStatusLabel.config(text="Status: Testing")
 
     #todo: check for button mashing on windows
+    testResults = None
     def BTTestResults(self,result):
+        self.testResults = result
+        
+    def processTestResults(self):
+        result = self.testResults
+        self.testResults = None
+        
         if self.testStatus == None:
             return
         else: self.testStatus = None
         self.devStatusLabel.config(text=result)
-    
-        
     
     def createChassisPanel(self,parent):
         
@@ -880,7 +908,7 @@ class MainWindow(Frame):
     def refreshCams(self): 
         cameraDetails = hardwareconfig.getCamNames()
         camLookup = {}
-        self.camList.clear()
+        self.camList = []
         for idx,dev in enumerate(cameraDetails):
             self.camList.append(cameraDetails[dev]['ID_MODEL'])
             
@@ -1434,12 +1462,12 @@ class MainWindow(Frame):
     def changeCheckBox(self, keyname, val):
         section,key = keyname.split(':')
         fileconfig.config[section][key] = str(val.get())
-        writeConfig()
+        #writeConfig()
         
     def changeEntryBox(self, keyname, val):
         section,key = keyname.split(':')
         fileconfig.config[section][key] = str(val.get())
-        writeConfig()
+        #writeConfig() #not a good idea to write config on every keypress
         
     testThread = None
     def createEMailPanel(self,parent):
@@ -1573,7 +1601,7 @@ class MainWindow(Frame):
         IMVar = StringVar()
         IMVar.set(fileconfig.config['EMAIL']['SENDER_EMAIL_ADDRESS'])
         IMVar.trace("w", lambda name, index, mode, IMVar=IMVar: self.changeEntryBox('EMAIL:sender_EMAIL_ADDRESS',IMVar))
-        alertRecE = Entry(boxSEA, textvariable=IMVar)
+        alertRecE = Entry(boxSEA, textvariable=IMVar,bg='white')
         alertRecE.pack(side=RIGHT,fill=X,expand=YES)
         
         box5 = Frame(boxOtherEmail)

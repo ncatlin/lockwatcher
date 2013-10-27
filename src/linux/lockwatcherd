@@ -16,7 +16,7 @@ import threading, queue, struct
 import subprocess,multiprocessing
 import socket, select
 import pyudev 
-import imapclient
+import imapclient, imaplib
 import dbus
 
 from gi.repository import GObject 
@@ -126,7 +126,7 @@ class lockMonitor(threading.Thread):
         output = p.communicate()[0].decode('UTF-8')
         
         #we found xscreensaver running, monitor it for locking
-        if 'xscreensaver-command' in output:
+        if 'xscreensaver' in output:
             p = subprocess.Popen(['/usr/bin/xscreensaver-command', '-watch'],stdout=subprocess.PIPE)
             self.process = p
             while self.running == True:
@@ -403,7 +403,7 @@ class temperatureMonitor(threading.Thread):
             time.sleep(1)
             newTemp = self.chip.get_value(self.subfeature.number)
             if newTemp < fileconfig.config['TRIGGERS']['LOW_TEMP']: 
-                eventHandle(('E_TEMPERATURE',"%s degrees C"%newTemp))
+                eventHandle('E_TEMPERATURE',"%s degrees C"%newTemp)
                 
         eventQueue.put(('status','temperature',"Not Started"))         
             
@@ -484,6 +484,7 @@ class bluetoothMon(threading.Thread):
         try:
             self.s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
             self.s.settimeout(50)
+            eventQueue.put(('status','bluetooth',"Connecting..."))
             self.s.connect((BTDevID,bluetoothPort))
         except:
             eventQueue.put(('log',"Error: Bluetooth connection to %s unavailable or unauthorised"%BTDevID))
@@ -491,8 +492,11 @@ class bluetoothMon(threading.Thread):
             return
         
         eventQueue.put(('status','bluetooth',"Active"))
+        
+        self.running = True
         while self.running == True:
             try:
+                
                 self.s.recv(1024)
             except socket.timeout:
                 pass
@@ -501,8 +505,8 @@ class bluetoothMon(threading.Thread):
                     break
                     
                 eventQueue.put(('log',"Bad connection to bluetooth device"))
-                eventQueue.put(('status',"Error: Connection Lost"))
-                eventHandle(('E_BLUETOOTH',None))
+                eventQueue.put(('status','bluetooth',"Error: Connection Lost"))
+                eventHandle('E_BLUETOOTH',None)
                 time.sleep(20)
             
             self.s.close()
@@ -510,6 +514,7 @@ class bluetoothMon(threading.Thread):
             self.s.settimeout(600)
 
             try:
+                eventQueue.put(('status','bluetooth',"Connecting..."))
                 self.s.connect((fileconfig.config['TRIGGERS']['BLUETOOTH_DEVICE_ID'],bluetoothPort)) 
             except:
                 continue
@@ -537,78 +542,95 @@ class emailMonitor(threading.Thread):
         
     def run(self):
         eventQueue.put(('status','email',"Connecting to server..."))
-        
-        try:
-            server = setupIMAP(fileconfig.config)
-        except socket.gaierror:
-            eventQueue.put(('log',"Error: Could not connect to mail IMAP server, will not listen for remote commands"))
-            eventQueue.put(("Status",'email',"Error: IMAP Connection Failed")) 
-            return
-        except imapclient.IMAPClient.Error as err:
-            eventQueue.put(('log',"Error: Could not connect to mail IMAP server, will not listen for remote commands"))
-            eventQueue.put(("Status",'email',err.args[0].decode()))
-            return
-        
-        self.server = server
-        self.server.idle()
-
-        eventQueue.put(('status','email',"Active"))
-        connectionFails = 0
-        
-        if self.running == False:
-            eventQueue.put(("Status",'email','Not Started'))
-        
+        firstAttempt = True
         
         while self.running == True:
-            #refresh the connection every 14 mins so it doesnt timeout
             try:
-                seqid = self.server.idle_check(840)
-            except ValueError:
-                if self.running == False: #terminate() was called
-                    eventQueue.put(("Status",'email','Not Started')) 
-                    return
-                
-            if seqid == []: #no mail
-                try:
-                    self.server.idle_done()
-                    self.server.idle()
-                    connectionFails = 0
-                except:
-                    if self.running == False: break
-                    eventQueue.put(("Status",'email','Attempting reconnect attempt %s'%(connectionFails)))
-                    time.sleep(connectionFails * 3)
-                    connectionFails += 1
-                    if connectionFails >= 3:
-                        eventQueue.put(("Status",'email','Error: Too many failed attempts'))
-                        return
-                    try:
-                        server = setupIMAP()
-                    except socket.gaierror:
-                        eventQueue.put(("Status",'email',"Error: Connect Failed")) 
-                        return
-                    self.server = server
-                    server.idle()
-                continue
-            
-            #fetch header data using the sequence id of the new mail  
-            seqid = seqid[0][0]
-            server.idle_done()
-            keys = server.fetch(seqid, ['ENVELOPE'])
-            server.idle()
-            keys = keys[seqid]['ENVELOPE']
-            addressee = keys[2][0][2]
-            intendedAddressee = fileconfig.config['EMAIL']['command_email_address'].split('@')[0]
-            if addressee == intendedAddressee:
-                eventQueue.put(("mail",keys[1]))
+                server = setupIMAP(fileconfig.config)
+            except socket.gaierror:
+                eventQueue.put(('log',"Error: Could not connect to mail IMAP server, will not listen for remote commands"))
+                eventQueue.put(("Status",'email',"Error: IMAP Connection Failed")) 
+                if firstAttempt == True: return
+            except imapclient.IMAPClient.Error as err:
+                eventQueue.put(('log',"Error: Could not connect to mail IMAP server, will not listen for remote commands"))
+                eventQueue.put(("Status",'email',err.args[0].decode()))
+                if firstAttempt == True: return
+            except:
+                err = str(sys.exc_info())
+                eventQueue.put(('log',"Error: Could not connect to mail IMAP server, will not listen for remote commands: %s"%err))
+                eventQueue.put(("Status",'email',"Error: IMAP Connection Failed"))
+                if firstAttempt == True: return
             else:
-                eventQueue.put(('log',"Got an email with unknown addressee: %s (need addressee %s)"%
-                                (addressee,intendedAddressee)))
+                firstAttempt = False
+                
+            self.server = server
+            self.server.idle()
+    
+            eventQueue.put(('status','email',"Active"))
+            connectionFails = 0
+            
+            
+            
+            if self.running == False:
+                #user stopped monitor during connection attempt
+                eventQueue.put(("Status",'email','Not Started'))
+            else: self.listening = True
+            
+            while self.listening == True:
+                #refresh the connection every 14 mins so it doesnt timeout
+                try:
+                    seqid = self.server.idle_check(480)
+                except:
+                    if self.running == False: #stop() was called
+                        self.listening = False
+                        eventQueue.put(("Status",'email','Not Started')) 
+                        break
+                    
+                if seqid == []: #no mail
+                    try:
+                        '''imapclient gives no way of detecting/handling disconnection
+                        just blocks on idle_done until reconnect.
+                        Could maybe do this in another thread and give it a time limit but
+                        seems harmless enough in testing'''
+                        self.server.idle_done()
+                        self.server.idle()
+                        continue
+                    except:
+                        print('exception after noop/idle/etc:%s'%str(sys.exc_info()))
+                        if self.running == False: break
+                        eventQueue.put(('log','IMAP Exception: %s'%str(sys.exc_info())))
+                        eventQueue.put(("Status",'email','Attempting reconnect attempt %s'%(connectionFails)))
+                        time.sleep(min(1+connectionFails * 3,60))
+                        connectionFails += 1
+                        ''' #no point really
+                        if connectionFails >= 3:
+                            eventQueue.put(("Status",'email','Error: Too many failed attempts'))
+                            self.listening = False
+                            self.running = False
+                            break
+                        '''
+                        break
+                
+                #fetch header data using the sequence id of the new mail  
+                seqid = seqid[0][0]
+                server.idle_done()
+                keys = server.fetch(seqid, ['ENVELOPE'])
+                server.idle()
+                keys = keys[seqid]['ENVELOPE']
+                addressee = keys[2][0][2]
+                intendedAddressee = fileconfig.config['EMAIL']['command_email_address'].split('@')[0]
+                if addressee == intendedAddressee:
+                    eventQueue.put(("mail",keys[1]))
+                else:
+                    eventQueue.put(('log',"Got an email with unknown addressee: %s (need addressee %s)"%
+                                    (addressee,intendedAddressee)))
                 
         eventQueue.put(('status','email',"Not Started"))
         
     def stop(self):
         self.running = False
-        try: 
+        try:
+            self.server.idle_done()
             self.server.logout()
         except:
             pass
@@ -822,8 +844,17 @@ class camera_monitor(threading.Thread):
         fps = self.settings['fps']
         minframes = self.settings['minframes']
         savepic = self.settings['savepic']
-
-        args = ["/usr/local/bin/motion-lw","-v%s"%self.device,"-t %s"%threshold,"-m %s"%minframes,"-f %s"%fps]
+        
+        if os.path.exists("/usr/local/bin/motion-lw"):
+            motionPath = "/usr/local/bin/motion-lw"
+        elif os.path.exists("/usr/bin/motion-lw"):
+            motionPath = "/usr/bin/motion-lw"
+        else:
+            eventQueue.put(('status',statusName,"Error: Cannot find motion-lw")) 
+            eventQueue.put(('log',"%s: Error: Could not find motion-lw in /usr/bin or /usr/local/bin"%self.name))
+            return 
+            
+        args = [motionPath,"-v%s"%self.device,"-t %s"%threshold,"-m %s"%minframes,"-f %s"%fps]
         savePath = fileconfig.config['CAMERAS']['image_path']
         if savepic == True: args.append("-j %s"%savePath)
         
@@ -857,12 +888,14 @@ class camera_monitor(threading.Thread):
             elif output[0] == 'path': #a new image capture
                 if self.event == 'E_ROOM_MOTION' and fileconfig.config['CAMERAS']['room_savepicture'] == 'True':
                     eventHandle(self.event,('Motion capture generated',output[1]))  
+            elif output[0] == '':
+                continue
             else: 
                 if self.running == False: break
                 eventQueue.put(('log',"%s: Motion error for %s: %s"%(self.name,self.device,[output]))) 
-                if 'Failed' in output:
-                    self.process.kill()
-                    return
+                eventQueue.put(('status',statusName,"Error"))
+                self.process.kill()
+                return
                 
         eventQueue.put(('status',statusName,"Not Started"))
                     
@@ -889,7 +922,7 @@ def executeRemoteCommand(command,threadDict):
             eventQueue.put(('log','Lock screen failed - command received while locked'))
         
     elif command == REMOTE_STARTMONITOR:
-        if threadDict['roomCamera'] == None:
+        if not isRunning('room_camera',threadDict):
             eventQueue.put(('startMonitor','room_camera'))
             sendemail.sendEmail("Command successful","Movement monitoring initiated. Have a nice day.",config)
             eventQueue.put(('log',"Movement monitoring initiated after remote command"))
@@ -898,8 +931,7 @@ def executeRemoteCommand(command,threadDict):
             eventQueue.put(('log',"Remote movement monitoring activation failed: already active"))
             
     elif command == REMOTE_STOPMONITOR:
-        if monitoringRoom == True:
-            monitoringRoom = False
+        if isRunning('room_camera',threadDict):
             eventQueue.put(('stopMonitor','room_camera'))
             sendemail.sendEmail("Command successful","Movement monitoring disabled. Welcome home!",config)
             eventQueue.put(('log',"Movement monitoring disabled after remote command"))
@@ -1077,10 +1109,10 @@ class lockwatcher(threading.Thread):
             try:
                 self.mainloop()
             except:
-                #got an exception, kill everything
-                for thread in self.threadDict.values():
-                    if thread == None: continue
-                    if thread.is_alive(): 
+                addLogEntry('Lockwatcher died with exception: %s. Restarting'%str(sys.exc_info()))
+                
+                for threadName,thread in self.threadDict.items():
+                    if isRunning(threadName,self.threadDict): 
                         thread.stop()
                 
                 #if we started recently, die to prevent a noisy loop
@@ -1090,7 +1122,7 @@ class lockwatcher(threading.Thread):
                     break
 
                 #otherwise try to restart
-                addLogEntry('Lockwatcher died with exception: %s. Restarting'%str(sys.exc_info()))
+                
                 lastStarted = time.time()
                 time.sleep(1)
             
@@ -1183,7 +1215,7 @@ class lockwatcher(threading.Thread):
                                                                           fileconfig.config,attachment=picPath)
                                 
                         else:
-                            emailResult = sendemail.sendEmail("Emergency shutdown",str(eventDetails))   
+                            emailResult = sendemail.sendEmail("Emergency shutdown",str(eventDetails),fileconfig.config)   
                         
                         if emailResult != True:
                             addLogEntry('Failed to send email: %s'%emailResult,listeners)
@@ -1245,8 +1277,9 @@ class lockwatcher(threading.Thread):
             elif eventType == 'stop':
                 for thread in threadDict.values():
                     if thread == None: continue
-                    if thread.is_alive(): 
-                        thread.stop()
+                    try:
+                        if thread.is_alive(): thread.stop()
+                    except: pass
                 addLogEntry('Local stop command received')
                 broadcast(listeners,'Shutdown')
                 self.running = False
@@ -1274,11 +1307,11 @@ class lockwatcher(threading.Thread):
                     
                 secret = fileconfig.config['EMAIL']['email_secret']
                 if validMail == True and sendemail.validHMAC(code,command,secret) == True:
-                    executeRemoteCommand(command) 
+                    executeRemoteCommand(command, threadDict) 
                     badCommands = 0 #good command resets limit
                 else:
                     badCommands += 1
-                    sendemail.sendEmail("Command failed","Bad command or authentication code received: %s"%str(event[1]))
+                    sendemail.sendEmail("Command failed","Bad command or authentication code received: %s"%str(event[1]),fileconfig.config)
                     eventQueue.put(('log','Mail not authenticated or bad command: %s'%str(event[1])))
                     badCommandLimit = int(fileconfig.config['EMAIL']['BAD_COMMAND_LIMIT'])
                     if badCommandLimit > 0 and badCommands >= badCommandLimit:
@@ -1308,9 +1341,12 @@ class lockwatcher(threading.Thread):
             
             #thread has a new status      
             elif eventType == 'Status':
-                threadStatuses[event[1]] = event[2]
-                msg = 'Status::%s::%s'%(event[1],event[2])
-                broadcast(listeners,msg)
+                try:
+                    threadStatuses[event[1]] = event[2]
+                    msg = 'Status::%s::%s'%(event[1],event[2])
+                    broadcast(listeners,msg)
+                except:
+                    eventQueue.put(('log','Bad status update: %s'%event))
             
             #config program wants all the thread statuses        
             elif eventType == 'getStatuses':

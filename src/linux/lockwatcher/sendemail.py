@@ -35,13 +35,17 @@ def doSend(msg,config):
     try:
         s = smtplib.SMTP(config['EMAIL']['EMAIL_SMTP_HOST'])
         s.login(config['EMAIL']['EMAIL_USERNAME'], config['EMAIL']['EMAIL_PASSWORD'])
-        s.sendmail(msg['To'],msg['From'], msg.as_string())      
-    except InterruptedError as e:
-        return 'SMTP connect error %s'%e
+        s.sendmail(msg['From'], msg['To'],msg.as_string())  
+    
+    #this threw an 'InterruptedError not defined' on one test system, what the hell?
+    #except InterruptedError as e:
+    #    return 'SMTP connect error %s'%e
     except smtplib.SMTPRecipientsRefused as e:
         return 'Bad email recipient: %s'%msg['To']
     except smtplib.SMTPServerDisconnected as e:
         return 'Server closed connection. It may think that sender address "%s" looks like a spam email address'%msg['From']
+    except smtplib.SMTPSenderRefused as e:
+        return 'Sender %s refused'%e
     except:
         return "Unexpected error: %s"%sys.exc_info()[0]
     return True
@@ -60,10 +64,11 @@ def sendEmail(subject,message,config,attachment=None):
         msg.attach(part)
         
     msg['Subject'] = subject
-    msg['From'] = config['EMAIL']['COMMAND_EMAIL_ADDRESS']
+    msg['From'] = config['EMAIL']['SENDER_EMAIL_ADDRESS']
     msg['To'] = config['EMAIL']['ALERT_EMAIL_ADDRESS']
     
     result = doSend(msg,config)
+    print('email send result: %s'%result)
     return result
     
         

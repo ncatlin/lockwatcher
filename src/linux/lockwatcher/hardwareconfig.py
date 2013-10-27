@@ -133,8 +133,10 @@ class BTTestThread(threading.Thread):
         try:
             self.socket = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
             self.socket.settimeout(45)
+            #sometimes this 'connects' to and returns a socket for devices that are not turned on
+            #might just be a problem with testing it on a vm?
             self.socket.connect((self.deviceID,2))
-        #todo : put all these in one except as e
+            
         except ConnectionRefusedError:
             if self.die == True: return #test cancelled
             self.callback("Status: Connection refused")
@@ -149,7 +151,12 @@ class BTTestThread(threading.Thread):
             return False
         
         if self.die == True: return #test cancelled
+        try:
+            self.socket.close()
+        except:
+            print('couldnt close socket')
         self.callback("Status: OK")
+        
     def terminate(self):
         self.die = True
         self.socket.close()

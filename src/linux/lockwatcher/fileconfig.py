@@ -14,11 +14,15 @@ TRIG_NEVER = 2
 CONFIG_FILE = '/etc/lockwatcher/lockwatcher.conf'
 config = None
 
+writing = False
 def writeConfig():
+    global writing
+    writing = True
     with open(CONFIG_FILE, 'w') as configfile:
             config.write(configfile,space_around_delimiters=False)
+    writing = False
     hardwareconfig.sendToLockwatcher('reloadConfig',config['TRIGGERS']['daemonport'])
-
+    
 def checkBtnChanged(btn):
 
     btnName = btn.get_name()
@@ -139,8 +143,9 @@ def generateKCodeTable():
     return kCodeTable
 
 def loadConfig():
-    if not os.path.exists(CONFIG_FILE) or os.path.getsize(CONFIG_FILE)<30:
-        if not os.access(CONFIG_FILE,os.W_OK):
+    CF_EXISTS = os.path.exists(CONFIG_FILE)
+    if not CF_EXISTS or os.path.getsize(CONFIG_FILE)<30:
+        if CF_EXISTS and not os.access(CONFIG_FILE,os.W_OK):
             print('Either lockwatcherd or lockwatcher-gui must first be run as root to perform some initial configuration')
             sys.exit()
         fd = open(CONFIG_FILE, 'w')
@@ -148,6 +153,7 @@ def loadConfig():
         if os.geteuid() == 0:
             os.chmod(CONFIG_FILE, 438) #rw-rw-rw-
         
+        global config
         config = configparser.ConfigParser()
         config.add_section('TRIGGERS')
         trig = config['TRIGGERS']
@@ -203,6 +209,7 @@ def loadConfig():
         
         config.add_section('KEYBOARD')
         config['KEYBOARD']['MAP'] = 'None'
+        writeConfig()
     else:    
         config = configparser.ConfigParser()
         config.read(CONFIG_FILE)
