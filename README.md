@@ -261,7 +261,8 @@ To-do list
 I haven't had much luck doing what the ballistix MOD utility does. 
 Also: other types of RAM on both operating systems.
 
-* Testing and better install configurations for other linux distros
+* Testing and better install configurations for other Linux distros. Start-on-Startup in particular I'm not sure
+ how to do in a distribution-independent way.
 
 * I'm not happy with the Windows shutdown speed at all, it might be worth implementing RAM erasing instead.
 I can't get firewire attacks to work on Window 7 so whether the shutdown process interrupts 
