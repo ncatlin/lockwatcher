@@ -264,18 +264,20 @@ Also: other types of RAM on both operating systems.
 * Testing and better install configurations for other Linux distros. Start-on-Startup in particular I'm not sure
  how to do in a distribution-independent way.
 
-* I'm not happy with the Windows shutdown speed at all, it might be worth implementing RAM erasing instead.
-I can't get firewire attacks to work on Window 7 so whether the shutdown process interrupts 
-RAM acquisition in time or not is a mystery.
-
-* If anyone could write something like this for Android/iOS/etc then please do. The exposure of mobile devices to 
-seizure and acquisition at borders or on arrest, plus their critical reliance on a tiny stable of acquisition tools
- makes them the most deserving hosts of this kind of tool. Storage wiping would even be handy, but I don't know 
-if it can be done without jailbreaking at the very least.
+* If anyone could write something like this for Android/iOS/etc then please do: pair-locking is nice but possibly
+ vendor-surmountable. The exposure of mobile devices to seizure and acquisition at borders or on arrest, plus 
+their critical reliance on a tiny stable of acquisition tools makes them the most deserving hosts of this kind 
+of tool. Storage wiping would even be handy because of easier false-positive avoidance, but I don't know if 
+it can be done without jailbreaking at the very least.
 
 * Python was probably a bad choice for this. Consider a C version. 
 
 Windows Version:
+
+* I'm not happy with the Windows shutdown speed at all, it might be worth implementing RAM erasing instead.
+I can't get firewire attacks to work on Windows 7 so whether the shutdown process interrupts 
+RAM acquisition in time or not is a mystery. Being able to disconnect hardware devices would be a big help, 
+like how VMWare or VirtualBox can steal your USB devices, but I haven't looked into how to do that yet.
 
 * Get keyboard/mouse interception working on Windows 8. If it isn't run as a service then GetAsyncKeystate 
 can get keypresses when the screen isn't locked but that isn't much. Come to think of it the Interception driver in
