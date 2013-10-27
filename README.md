@@ -272,4 +272,13 @@ seizure and acquisition at borders or on arrest, plus their critical reliance on
  makes them the most deserving hosts of this kind of tool. Storage wiping would even be handy, but I don't know 
 if it can be done without jailbreaking at the very least.
 
-* The headings on this readme look ridiculously huge. Shrink em'.
+* Python was probably a bad choice for this. Consider a C version. 
+
+Windows Version:
+
+* Get keyboard/mouse interception working on Windows 8. If it isn't run as a service then GetAsyncKeystate 
+can get keypresses when the screen isn't locked but that isn't much. Come to think of it the Interception driver in
+ general is far from ideal even without the Win 8 problem: there is no source code for the installer and no licence.
+
+* Ditch the iSpy requirement. Slicing and dicing Motion for use with lockwatcher was easy because it 
+isn't a GUI program but I took one look at the iSpy code and went "nope". 
