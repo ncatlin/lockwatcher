@@ -216,6 +216,8 @@ class emailTestThread(threading.Thread):
         if self.config['EMAIL']['EMAIL_SMTP_HOST']!= None:
             try:
                 s = smtplib.SMTP(self.config['EMAIL']['EMAIL_SMTP_HOST'], timeout=10)
+                s.ehlo()
+                s.starttls()
                 s.login(self.config['EMAIL']['EMAIL_USERNAME'], self.config['EMAIL']['EMAIL_PASSWORD'])
                 s.quit()
             except smtplib.SMTPAuthenticationError:

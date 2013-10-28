@@ -34,8 +34,11 @@ def validHMAC(code,command, secretStr):
 def doSend(msg,config):
     try:
         s = smtplib.SMTP(config['EMAIL']['EMAIL_SMTP_HOST'])
+        s.ehlo()
+        s.starttls()
         s.login(config['EMAIL']['EMAIL_USERNAME'], config['EMAIL']['EMAIL_PASSWORD'])
         s.sendmail(msg['From'], msg['To'],msg.as_string())  
+        s.quit()
     
     #this threw an 'InterruptedError not defined' on one test system, what the hell?
     #except InterruptedError as e:

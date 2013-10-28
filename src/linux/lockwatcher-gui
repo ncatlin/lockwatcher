@@ -39,10 +39,10 @@ except:
 VERBOSELOGS = False
 
 #runs the daemon as one of our threads so we can attach a debugger
-DEBUGMODE = True
-CREATELW = True
-if DEBUGMODE == False:
-    if CREATELW == False:
+DEBUGMODE = False
+CREATELW = False
+if DEBUGMODE == True:
+    if CREATELW == True:
         import lockwatcherd
         lockwatcherd.createLockwatcher()
         lockwatcherd.monitorThread.start()
@@ -270,7 +270,7 @@ class MainWindow(Frame):
         #clear recent keys if we left keyboard tab    
         self.recentKCodes = []
         
-        while fileconfig.writing == True: pass
+        while fileconfig.writing == True: print('waiting writing')
         self.draw_selected_panel(self.windowFrame)  
         
     def draw_selected_panel(self,parent):

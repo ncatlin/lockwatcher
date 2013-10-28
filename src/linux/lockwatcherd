@@ -616,14 +616,20 @@ class emailMonitor(threading.Thread):
                 server.idle_done()
                 keys = server.fetch(seqid, ['ENVELOPE'])
                 server.idle()
-                keys = keys[seqid]['ENVELOPE']
-                addressee = keys[2][0][2]
-                intendedAddressee = fileconfig.config['EMAIL']['command_email_address'].split('@')[0]
-                if addressee == intendedAddressee:
-                    eventQueue.put(("mail",keys[1]))
-                else:
-                    eventQueue.put(('log',"Got an email with unknown addressee: %s (need addressee %s)"%
-                                    (addressee,intendedAddressee)))
+                
+                try:
+                    keys = keys[seqid]['ENVELOPE']
+                    addressee = keys[2][0][2]
+                    intendedAddressee = fileconfig.config['EMAIL']['command_email_address'].split('@')[0]
+                    if addressee == intendedAddressee:
+                        eventQueue.put(("mail",keys[1]))
+                    else:
+                        ourAddress = fileconfig.config['EMAIL']['sender_email_address'].split('@')[0]
+                        if addressee != ourAddress:
+                            eventQueue.put(('log',"Got an email with unknown addressee: %s (need addressee %s)"%
+                                            (addressee,intendedAddressee)))
+                except:
+                    pass #avoid problems when user deletes emails
                 
         eventQueue.put(('status','email',"Not Started"))
         
@@ -912,41 +918,45 @@ commandList = range(REMOTE_LOCK,REMOTE_KILLSWITCH+1)
 #authenticated email command is passed here for execution
 def executeRemoteCommand(command,threadDict):
     config = fileconfig.config
+    result = True
     if command == REMOTE_LOCK:
         if hardwareconfig.checkLock() == False:
             AFroutines.lockScreen()
-            sendemail.sendEmail("Command successful","Screen locked",config)
+            result = sendemail.sendEmail("Command successful","Screen locked",config)
             eventQueue.put(('log','Locking screen from remote command'))
         else:
-            sendemail.sendEmail("Command failed","Screen was already locked",config)
+            result = sendemail.sendEmail("Command failed","Screen was already locked",config)
             eventQueue.put(('log','Lock screen failed - command received while locked'))
         
     elif command == REMOTE_STARTMONITOR:
         if not isRunning('room_camera',threadDict):
             eventQueue.put(('startMonitor','room_camera'))
-            sendemail.sendEmail("Command successful","Movement monitoring initiated. Have a nice day.",config)
+            result = sendemail.sendEmail("Command successful","Movement monitoring initiated. Have a nice day.",config)
             eventQueue.put(('log',"Movement monitoring initiated after remote command"))
         else:
-            sendemail.sendEmail("Command failed","Movement monitoring already active.",config)
+            result = sendemail.sendEmail("Command failed","Movement monitoring already active.",config)
             eventQueue.put(('log',"Remote movement monitoring activation failed: already active"))
             
     elif command == REMOTE_STOPMONITOR:
         if isRunning('room_camera',threadDict):
             eventQueue.put(('stopMonitor','room_camera'))
-            sendemail.sendEmail("Command successful","Movement monitoring disabled. Welcome home!",config)
+            result = sendemail.sendEmail("Command successful","Movement monitoring disabled. Welcome home!",config)
             eventQueue.put(('log',"Movement monitoring disabled after remote command"))
         else:
-            sendemail.sendEmail("Command failed","Movement monitoring was not active.",config)
+            result = sendemail.sendEmail("Command failed","Movement monitoring was not active.",config)
             eventQueue.put(('log',"Remote movement monitoring deactivation failed: not active"))
             
     elif command == REMOTE_SHUTDOWN:
-        sendemail.sendEmail("Command successful","Shutting down...",config)
+        result = sendemail.sendEmail("Command successful","Shutting down...",config)
         addLogEntry("Standard shutdown due to remote command")
         AFroutines.standardShutdown()
         
     elif command == REMOTE_KILLSWITCH:
         addLogEntry("Emergency shutdown due to remote command")
         AFroutines.emergency()   
+    
+    if result != True:
+        eventQueue.put(('log',"Failed to send email: %s"%str(result)))
 
 def startMonitor(threadDict,monitor):
     if monitor == 'ipc':
@@ -1312,7 +1322,7 @@ class lockwatcher(threading.Thread):
                 else:
                     badCommands += 1
                     sendemail.sendEmail("Command failed","Bad command or authentication code received: %s"%str(event[1]),fileconfig.config)
-                    eventQueue.put(('log','Mail not authenticated or bad command: %s'%str(event[1])))
+                    eventQueue.put(('log','Mail not authenticated or bad command: "%s". Ensure clocks are synchronised.'%str(event[1])))
                     badCommandLimit = int(fileconfig.config['EMAIL']['BAD_COMMAND_LIMIT'])
                     if badCommandLimit > 0 and badCommands >= badCommandLimit:
                         addLogEntry(str(event[1]),listeners)
@@ -1428,4 +1438,3 @@ if __name__ == "__main__":
         else:
                 print( "usage: %s start|stop|restart" % sys.argv[0])
                 sys.exit(2)  
-                       
