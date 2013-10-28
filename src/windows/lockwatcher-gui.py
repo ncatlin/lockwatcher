@@ -1379,7 +1379,7 @@ class MainWindow(Frame):
         emailAccFrame =  ttk.LabelFrame(parent,text="Email Account Settings",borderwidth=1,relief=GROOVE)
         emailAccFrame.pack(padx=6,fill=X,expand=YES)
         
-        Label(emailAccFrame,text='Used to send alerts and receive\n commands from your remote device').pack()
+        Label(emailAccFrame,text='Used to send alerts and receive commands from your remote device').pack()
         
         box1 = Frame(emailAccFrame)
         box1.pack(fill=X,expand=YES)
@@ -1641,9 +1641,6 @@ class MainWindow(Frame):
             fileconfig.config.set('TRIGGERS','tc_path',newpath)
             writeConfig()
         
-
-
-
 
 app = MainWindow(master=root)
 root.after(2000,app.redrawStatus)

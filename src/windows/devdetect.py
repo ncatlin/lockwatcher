@@ -27,34 +27,32 @@ lockedStateText = {True:'Locked',False:'Not Locked'}
 def eventHandle(event_type,eventReason):
     locked = hardwareconfig.checkLock()
 
-    
     while True: #this can be a race condition with configfile alterations. try again if we get a bad reading
         try:   
             alwaysTriggers = fileconfig.config.get('TRIGGERS','ALWAYSTRIGGERS').split(',')
             lockedTriggers = fileconfig.config.get('TRIGGERS','LOCKEDTRIGGERS').split(',')
-            
-            if (event_type in alwaysTriggers) or (event_type in lockedTriggers and locked == True):
-                
-                eventQueue.put(("Log","[%s - *Trigger ACTIVATED*]. %s"%(lockedStateText[locked],eventReason)))
-                
-                if fileconfig.config.get('TRIGGERS','test_mode') == 'False':
-                    #allow recovery in situations where the computer would shuts down as soon as it starts up
-                    if time.time() < startupTime + 90:
-                        eventQueue.put(("Log",'Shutdown cancelled - Not allowed within 90 seconds of lockwatcher start'))
-                    else:
-                        eventQueue.put(("Kill",eventReason))
-                else:
-                    eventQueue.put(("Log",'Shutdown cancelled - test mode active'))
-            else:
-                '''log the ignored trigger (but not the 2nd killswitch because a logfile containing
-                every press of the letter 'p' is going to be a mess)'''
-                if event_type not in  ['E_MOUSE_MOVE','E_MOUSE_BTN','E_KILL_SWITCH_2']:
-                    eventQueue.put(("Log","[%s - Trigger ignored]. %s"%(lockedStateText[locked],eventReason)))
-            
-            break
+            testMode = fileconfig.config.get('TRIGGERS','test_mode')
         except:
             time.sleep(0.3)
             continue
+        
+        if (event_type in alwaysTriggers) or (event_type in lockedTriggers and locked == True):
+            
+            eventQueue.put(("Log","[%s - *Trigger ACTIVATED*]. %s"%(lockedStateText[locked],eventReason)))
+            if testMode == 'False':
+                #allow recovery in situations where the computer would otherwise shutdown as soon as it starts up
+                if time.time() < startupTime + 90:
+                    eventQueue.put(("Log",'Shutdown cancelled - Not allowed within 90 seconds of lockwatcher start'))
+                else:
+                    eventQueue.put(("Kill",eventReason))
+            else:
+                eventQueue.put(("Log",'Shutdown cancelled - test mode active'))
+        else:
+            '''log the ignored trigger (but not the 2nd killswitch because a logfile containing
+            every press of the letter 'p' is going to be a mess)'''
+            if event_type not in  ['E_MOUSE_MOVE','E_MOUSE_BTN','E_KILL_SWITCH_2']:
+                eventQueue.put(("Log","[%s - Trigger ignored]. %s"%(lockedStateText[locked],eventReason)))
+
     
 #running as a service makes exception handling more difficult
 #write log directly instead of relying on eventqueue processing    
@@ -713,6 +711,8 @@ REMOTE_KILLSWITCH = 5
 commandList = range(REMOTE_LOCK,REMOTE_KILLSWITCH+1)
 
 def executeRemoteCommand(command):
+    result = True
+    
     if command == REMOTE_LOCK:
         if hardwareconfig.checkLock() == False:
             AFroutines.lockScreen()
@@ -721,9 +721,6 @@ def executeRemoteCommand(command):
         else:
             eventQueue.put(("Log",'Lock screen failed - command received while locked'))
             result = sendemail.sendEmail("Command failed","Screen already locked")
-            
-        if result != True:
-            eventQueue.put(('Log','Mail send failed: %s'%result))
             
     elif command == REMOTE_STARTMONITOR:
         #cant check ispy camera status, just have to assume it was not monitoring
@@ -737,9 +734,6 @@ def executeRemoteCommand(command):
         
         subprocess.call([iSpyPath,'commands bringonline,2,%s'%roomCamID])
         result = sendemail.sendEmail("Command successful","Movement monitoring initiated. Have a nice day.")
-        if result != True:
-            eventQueue.put(('Log','Mail send failed: %s'%result))
-        
         
     elif command == REMOTE_STOPMONITOR:
         #cant check ispy camera status, just have to assume it was already monitoring
@@ -753,18 +747,17 @@ def executeRemoteCommand(command):
             
         subprocess.call([iSpyPath,'commands takeoffline,2,%s'%roomCamID])
         result = sendemail.sendEmail("Command successful","Movement monitoring disabled. Welcome home!")
-        if result != True:
-            eventQueue.put(('Log','Mail send failed: %s'%result))
         
     elif command == REMOTE_SHUTDOWN:
         result = sendemail.sendEmail("Command successful","Shutting down...")
-        if result != True:
-            eventQueue.put(('Log','Mail send failed: %s'%result))
         eventQueue.put(("Log","Initiating standard shutdown due to remote command"))
         AFroutines.standardShutdown()
         
     elif command == REMOTE_KILLSWITCH:
+        eventQueue.put(("Log","Initiating emergency shutdown due to remote command"))
         AFroutines.emergency()
+        
+    if result != True: eventQueue.put(('Log','Mail send failed: %s'%result))
 
 #this is a travesty
 trigMonitorMap = {'bluetooth': 'BTMonitor',
@@ -950,7 +943,6 @@ class lockwatcher(threading.Thread):
             
             #--------------add to log file + listener log window if they exist
             elif eventType == 'Log':
-                #if self.msgAdd != None: self.msgAdd(event[1])
                 addLogEntry(str(event[1]),listeners)
                 
             elif eventType == 'stop':
@@ -1010,7 +1002,7 @@ class lockwatcher(threading.Thread):
                     result = sendemail.sendEmail("Command failed","Bad command or authentication code received: %s"%str(event[1]))
                     if result != True:
                         eventQueue.put(('Log','Mail send failed: %s'%result))
-                    eventQueue.put(('Log','Mail not authenticated or bad command: %s'%str(event[1])))
+                    eventQueue.put(('Log','Mail not authenticated or bad command: "%s". Ensure clocks are synchronised.'%str(event[1])))
                     badCommandLimit = int(fileconfig.config.get('EMAIL','BAD_COMMAND_LIMIT'))
                     if badCommandLimit > 0 and badCommands >= badCommandLimit:
                         addLogEntry(str(event[1]),listeners)

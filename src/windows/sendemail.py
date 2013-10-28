@@ -1,7 +1,7 @@
 '''
 @author: Nia Catlin
 '''
-import smtplib, time
+import smtplib, time, sys
 import hashlib, hmac, os
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -35,8 +35,11 @@ def validHMAC(code,command):
 def doSend(msg):
     try:
         s = smtplib.SMTP(config.get('EMAIL','email_smtp_host'),timeout=4)
+        s.ehlo()
+        s.starttls()
         s.login(config.get('EMAIL','email_username'), config.get('EMAIL','email_password'))
-        s.sendmail(msg['To'],msg['From'], msg.as_string())
+        s.sendmail(msg['From'],msg['To'], msg.as_string())
+        s.quit()
         return True  
     except gaierror:
         return 'SMTP connect error'
@@ -44,7 +47,9 @@ def doSend(msg):
         return 'SMTP authentication error'
     except smtplib.SMTPException as e:
         return 'SMTP error :%s'%e
-        
+    except:
+        return 'SMTP exception: %s'%str(sys.exc_info())
+
 #takes subject/message strings, optional attachment filepath
 #returns True if ok or string describing error
 def sendEmail(subject,message,attachment=None):
