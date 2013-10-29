@@ -3,7 +3,7 @@
 
 Various config file handling routines
 '''
-import configparser,re,pickle,os
+import configparser,re,pickle,os,time
 import sys,subprocess
 from lockwatcher import hardwareconfig
 
@@ -20,6 +20,12 @@ def writeConfig():
     writing = True
     with open(CONFIG_FILE, 'w') as configfile:
             config.write(configfile,space_around_delimiters=False)
+            configfile.close()
+    '''the gui seems to hit a race condition when changing tabs occasionally
+    but I haven't found a way to repeat it reliably. Putting a little sleep in here
+    to give it time to write.
+    '''
+    time.sleep(0.1)
     writing = False
     hardwareconfig.sendToLockwatcher('reloadConfig',config['TRIGGERS']['daemonport'])
     

@@ -270,7 +270,6 @@ class MainWindow(Frame):
         #clear recent keys if we left keyboard tab    
         self.recentKCodes = []
         
-        while fileconfig.writing == True: print('waiting writing')
         self.draw_selected_panel(self.windowFrame)  
         
     def draw_selected_panel(self,parent):
