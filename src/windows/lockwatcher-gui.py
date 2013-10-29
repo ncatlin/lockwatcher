@@ -636,6 +636,9 @@ class MainWindow(Frame):
         
         messageListB.config(state=DISABLED)
         
+        Label(parent,text='Due to their frequency, ignored keyboard and mouse events are not logged.').pack()
+        Label(parent,text='Use test mode to test them.').pack()
+        
     #todo: consolidate these for tc/log/mod
     def chooseLogFile(self):
         path = tkFileDialog.asksaveasfilename(filetypes=[('txt files','.txt')])
