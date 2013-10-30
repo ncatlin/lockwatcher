@@ -53,6 +53,7 @@ class interceptListenThread(threading.Thread):
                     else: keyname = 0
                 
                     self.keyQueue.put(({1:False,0:True}[keyStroke.state],(kCode,keyname)))
+                    
                 elif is_mouse(device):
                     stroke2MouseStroke( stroke, dest = mouseStroke )
                     send(context,device, mouseStroke,1)
@@ -148,7 +149,9 @@ class BTTestThread(threading.Thread):
     def run(self):
         error, result = winsockbtooth.connect(deviceID = self.deviceID)
         if error == False:
+            winsockbtooth.closesocket(result)
             winsockbtooth.WSACleanup()
+        
         self.callback(error,result)
         return
 
@@ -166,14 +169,6 @@ def BTStrToHex(BTStr):
     
     return hexDevID      
 
-def plog2(sf):
-        try:
-            fd = open('c:\loglock.txt','a+')
-            fd.write(time.strftime('[%x %X] ')+str(sf)+'\n') 
-            fd.close()
-        except:
-            pass
-
 #sends the output of 'hcitool scan' to the callback function
 #ie: a list of nearby discoverable bluetooth devices
 class BTScanThread(threading.Thread):
@@ -188,16 +183,13 @@ class BTScanThread(threading.Thread):
             self.callback("[Error]"+str(e))
             return None
         
-        try:
-            if scanprocess == []:
-                self.callback("[Error] Bluetooth does not appear to be enabled: skipping")
-                return None
+        if scanprocess == []:
+            self.callback("[Error] Bluetooth does not appear to be enabled: skipping")
+            return None
 
-            out, err = scanprocess.communicate()
-            self.callback(out)
-        except:
-            plog2('btscan except: %s'%str(sys.exc_info()))
-        
+        out, err = scanprocess.communicate()
+        self.callback(out)
+
         return None
 
 #checks temperature.csv for updates
@@ -269,6 +261,8 @@ class emailTestThread(threading.Thread):
         if smtpHost != None:
             try:
                 s = smtplib.SMTP(smtpHost, timeout=10)
+                s.ehlo()
+                s.starttls()
                 s.login(self.config.get('EMAIL','EMAIL_USERNAME'), self.config.get('EMAIL','EMAIL_PASSWORD'))
                 s.quit()
             except smtplib.SMTPAuthenticationError:
@@ -278,7 +272,7 @@ class emailTestThread(threading.Thread):
             except socket.gaierror:
                 resultS = 'Connection Failed'
             except:
-                resultS = 'Failed'
+                resultS = 'Failed: %s'%str(sys.exc_info())
             else:
                 resultS = 'OK'
         
@@ -296,6 +290,8 @@ class emailTestThread(threading.Thread):
                 resultI = 'Connection Timeout'
             except imapclient.IMAPClient.Error as e:
                 resultI = e.args[0].decode('utf-8')
+            except:
+                resultI = str(sys.exc_info())
             
         self.callback('IMAP: '+resultI,'SMTP: '+resultS)
         return None
@@ -493,15 +489,3 @@ vkDict= {
 0xAF : 'VolUp',
 0x05 : 'XBtn1',
 0x06 : 'XBtn2'}
-
-'''
-#works interactively, not as a service
-def clo():
-    user32 = ctypes.windll.User32
-    OpenInputDesktop = user32.OpenInputDesktop
-    
-    if OpenInputDesktop (0, False, win32con.STANDARD_RIGHTS_READ|win32con.DESKTOP_CREATEWINDOW) == 0:
-        return True
-    else:
-        return False   
-'''

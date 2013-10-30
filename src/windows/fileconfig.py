@@ -9,15 +9,6 @@ import _winreg
 CONFIG_FILE = None
 config = None
 
-def plog2(sf):
-        
-        try:
-            fd = open('c:\programdata\loglock.txt','a+')
-            fd.write(time.strftime('[%x %X] ')+str(sf)+'\n') 
-            fd.close()
-        except:
-            pass
-
 def writeConfig():
     with open(CONFIG_FILE, 'w') as configfile:
             config.write(configfile)#,space_around_delimiters=False)
@@ -69,10 +60,10 @@ def loadConfig():
     except:
         key = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,"SOFTWARE\Wow6432Node\Lockwatcher")
         CONFIG_FILE = str(_winreg.QueryValueEx(key,'ConfigPath')[0])
-    
-    plog2('Loading configFile: %s'%CONFIG_FILE)
+    time.sleep(0.1)
     if not os.path.exists(CONFIG_FILE) or os.path.getsize(CONFIG_FILE)<20:
         global config
+        print('writing new config')
         config = ConfigParser.ConfigParser()
         config.add_section('TRIGGERS')
         config.set('TRIGGERS','bluetooth_device_id','')
@@ -80,7 +71,7 @@ def loadConfig():
         config.set('TRIGGERS','kbd_kill_combo_1','')
         config.set('TRIGGERS','kbd_kill_combo_2','')
         config.set('TRIGGERS','low_temp','21')
-        config.set('TRIGGERS','lockedtriggers','E_DEVICE,E_NETCABLE,E_CHASSIS_MOTION,E_ROOM_MOTION,E_NET_CABLE_IN,E_NET_CABLE_OUT,E_KILL_SWITCH_2')
+        config.set('TRIGGERS','lockedtriggers','E_DEVICE,E_CHASSIS_MOTION,E_ROOM_MOTION,E_NET_CABLE_IN,E_NET_CABLE_OUT,E_KILL_SWITCH_2')
         config.set('TRIGGERS','alwaystriggers','E_KILL_SWITCH_1')
         config.set('TRIGGERS','dismount_tc','False')
         config.set('TRIGGERS','exec_shellscript','False')
@@ -92,6 +83,7 @@ def loadConfig():
         config.set('TRIGGERS','ispy_path','')
         config.set('TRIGGERS','room_cam_id','')
         config.set('TRIGGERS','logfile','')
+        config.set('TRIGGERS','debuglog','False')
         config.set('TRIGGERS','test_mode','False')
         
         config.add_section('EMAIL')

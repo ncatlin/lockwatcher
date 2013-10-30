@@ -5,8 +5,8 @@
 '''
 import wmi, win32serviceutil
 import pywin
-import encodings
-import socket, subprocess
+import encodings, ctypes
+import socket, subprocess, select
 import re, os, time
 import string, random, threading
  
@@ -24,11 +24,68 @@ import _winreg
 from PIL import Image, ImageTk
 import win32api
 
-TRIG_LOCKED = 0
-TRIG_ALWAYS = 1
-TRIG_NEVER = 2
+#should probably put this in a different module or something
+#
+#when the ui is run this thread is created and listens for lock commands from the service
+#we dont really give any way of closing it thought so it makes uninstalling a pain
+class lockerThread(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self.name = 'lockerThread'
+    def run(self):
+        try:
+            s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+            s.bind( ('127.0.0.1', 22189) )
+            self.socket = s
+        except:
+            #already running, no problem. Unless something else is on 22189, then there is a problem.
+            return
+        
+        while True:
+            try:
+                ready = select.select([s],[],[],120)
+                if not ready[0]: continue
+            except socket.error:
+                try:
+                    s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+                    s.bind(('127.0.0.1', 22189))
+                    self.socket = s
+                except:
+                    time.sleep(1)
+                    continue
+            
+            data = s.recv(64)
+            command = data.decode('UTF-8')             
+            
+            if command == '1':
+                ctypes.windll.user32.LockWorkStation()
+            elif command == 'x':
+                s.close()
+                return
 
-lockStates = ('Screen Locked','Anytime','Never')
+#allow starting/stopping the locker thread from the commandline 
+#used on system startup and uninstallation         
+if len(sys.argv) != 1:
+    #terminate locker thread to allow uninstallation
+    if sys.argv[1] == 'KillLocker':
+        s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+        s.connect(('127.0.0.1', 22189))
+        s.send('x')
+        s.close()
+        
+    #would be a good idea to run with this every system start
+    elif sys.argv[1] == 'StartLocker':
+        myLocker = lockerThread()
+        myLocker.start()
+    
+    sys.exit()
+       
+TRIG_LOCKED = 0
+TRIG_NEVER = 1
+TRIG_ALWAYS = 2
+
+
+lockStates = ('Screen Locked','Never','Anytime')
 safeLockStates = ('Screen Locked','Never')
 
 OPT_STATUS = 0
@@ -59,10 +116,8 @@ if version.major == 6 and version.minor > 1:
     del optionCategories[OPT_KBD]
     del optionCategories[OPT_MOUSE]
 
-VERBOSELOGS = False
-
 #run lockwatcher as a thread instead of a service
-DEBUGMODE = False
+DEBUGMODE = False    
 CREATELW = False
 if DEBUGMODE == True:
     import devdetect
@@ -74,7 +129,10 @@ lwMonitorThread = None
 
 root = Tk()
 root.update()
-root.wm_iconbitmap('favicon.ico')
+try:
+    root.wm_iconbitmap('favicon.ico')
+except:
+    pass
 
 s = ttk.Style()
 s.configure('TLabelframe.Label', foreground='royalblue')
@@ -165,11 +223,9 @@ class updateListenThread(threading.Thread):
             self.listening = True
             
             self.logCallback(None,redrawStatus=True)
-            if VERBOSELOGS == True: self.logCallback('Connection to lockwatcher established. Ready for data.')
             while self.listening == True:
                 try:
-                    data = conn.recv(1024)#.decode('UTF-8')
-                    if VERBOSELOGS == True: self.logCallback('Got data from lockwatcher: '+data)
+                    data = conn.recv(1024)
                 except socket.timeout:
                     continue
                 except socket.error:
@@ -217,8 +273,7 @@ def writeConfig():
     fileconfig.writeConfig()
     sendToLockwatcher('reloadConfig')
 
-#todo: one of these probably needs deleting
-def tktrigStateChange(combo):
+def tkTrigStateChange(combo):
     LOCKED = fileconfig.config.get('TRIGGERS','lockedtriggers').split(',')
     ALWAYS = fileconfig.config.get('TRIGGERS','alwaystriggers').split(',')
     
@@ -257,8 +312,6 @@ def lwServiceStatus():
     if lwServiceStatus == []: return None
     else: 
         return lwServiceStatus[0].State
-    
-    
 
 class MainWindow(Frame):
     kbdThread = None
@@ -372,6 +425,9 @@ class MainWindow(Frame):
     def createStatusPanel(self,parent):
         self.drawingStatus = True
         
+        if DEBUGMODE == True:
+            Label(parent,text='WARNING: DEBUGMODE ACTIVE',background='red').pack(pady=5)
+            
         if lwMonitorThread.listenPort == None:
             Label(parent,text='Failed to bind any ports on 127.0.0.1, cannot connect to Lockwatcher service').pack(pady=5)
             return
@@ -617,6 +673,7 @@ class MainWindow(Frame):
         Button(logFileFrame,text='Select',command=self.chooseLogFile).pack(side=LEFT)
         self.logPath = logPath
         logPath.trace("w", lambda name, index, mode, logPath=logPath: self.changeEntryBox('TRIGGERS:logfile',self.logPath))
+    
         
         msgFrame = ttk.Labelframe(parent,text='Recent events:',relief=SUNKEN)
         msgFrame.pack(expand=YES,fill=BOTH,padx=4,pady=4)
@@ -743,7 +800,7 @@ class MainWindow(Frame):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
         
     def BTDevSelected(self,listbox):
@@ -824,7 +881,7 @@ class MainWindow(Frame):
             elif result == 10050:
                 self.devStatusLabel.config(text="Status: No Bluetooth")
             else:
-                print('Status: Error %s'%result)
+                self.devStatusLabel.config(text='Status: Error %s'%result)
             return
         else:
             self.devStatusLabel.config(text="Status: OK")
@@ -882,7 +939,7 @@ class MainWindow(Frame):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack(side=RIGHT)
-        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
         TestFrame = Frame(RAMFrame)
         TestFrame.pack(side=RIGHT)
@@ -911,7 +968,7 @@ class MainWindow(Frame):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
     def newTriggerTemp(self,temp):
         try:
@@ -1007,7 +1064,7 @@ class MainWindow(Frame):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
         
         roomConfig = ttk.LabelFrame(parent,text="Room movement monitoring settings",borderwidth=1,relief=GROOVE)
@@ -1030,7 +1087,7 @@ class MainWindow(Frame):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
     def exampleShow(self,category):
         d = exampleDialog(root,category)
@@ -1093,7 +1150,7 @@ class MainWindow(Frame):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
         secondaryFrame =  ttk.LabelFrame(parent,text="Secondary killswitch",borderwidth=1,relief=GROOVE)
         secondaryFrame.pack(pady=5,padx=5)
@@ -1123,7 +1180,7 @@ class MainWindow(Frame):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
         if os.path.exists(os.environ['windir']+'\sysnative\drivers\keyboard.sys'):
             frameText='Interception Driver Status: Installed'
@@ -1215,13 +1272,13 @@ class MainWindow(Frame):
         trigStateFrame.pack(pady=5)
         
         createToolTip(trigStateFrame, "Choose when the trigger will cause an emergency shutdown")
-        triggerName = 'E_MOUSE_MV'
+        triggerName = 'E_MOUSE_MOVE'
         trigBox = ttk.Combobox(trigStateFrame,values=safeLockStates,state='readonly',name=triggerName.lower())
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         else: trigBox.current(1)
         trigBox.pack(pady=5,padx=5)
-        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
         buttonFrame = ttk.Labelframe(parent,text='Mouse Buttons',relief=GROOVE)
         buttonFrame.pack(fill=X,side=TOP,padx=4,pady=4)
@@ -1238,7 +1295,7 @@ class MainWindow(Frame):
             trigBox.current(0)
         else: trigBox.current(1)
         trigBox.pack(pady=5,padx=5)
-        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
     
     def createNetworkPanel(self,parent):
         Label(parent,font='helvetica 10',text=
@@ -1267,7 +1324,7 @@ class MainWindow(Frame):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
     
     
         outFrame =  ttk.LabelFrame(parent,text="Monitor for disconnection",borderwidth=1,relief=GROOVE)
@@ -1291,7 +1348,7 @@ class MainWindow(Frame):
             trigBox.current(1)
         else: trigBox.current(2)
         trigBox.pack()
-        trigBox.bind('<<ComboboxSelected>>', tktrigStateChange)
+        trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
         self.netdevScan = hardwareconfig.netScanThread(self.netDevsEnumerated)
         self.netdevScan.start()
@@ -1352,8 +1409,15 @@ class MainWindow(Frame):
         
     def changeEntryBox(self, keyname, val):
         section,key = keyname.split(':')
-        fileconfig.config.set(section,key,str(val.get()))
-        writeConfig()
+        while True:
+            try:
+                print(section,key,str(val.get()))
+                fileconfig.config.set(section,key,str(val.get()))
+                writeConfig()
+                return
+            except:
+                print('exception')
+                continue
         
     testThread = None
     def createEMailPanel(self,parent):
@@ -1525,6 +1589,8 @@ class MainWindow(Frame):
     
     def testEmail(self):
         if self.testThread == None:
+            writeConfig()
+            time.sleep(0.1)
             self.testBtnLabel.set('Test in progress...')
             self.testThread = hardwareconfig.emailTestThread(self.testEmailResults,fileconfig.config)
             self.testThread.start() 
@@ -1643,11 +1709,18 @@ class MainWindow(Frame):
             self.TCPath.set(newpath)
             fileconfig.config.set('TRIGGERS','tc_path',newpath)
             writeConfig()
+
+
         
 
+myLocker = lockerThread()
+myLocker.start()
+ 
 app = MainWindow(master=root)
 root.after(2000,app.redrawStatus)
 root.after(500,app.processNewStatuses)
 root.mainloop()
 
 lwMonitorThread.stop()
+
+

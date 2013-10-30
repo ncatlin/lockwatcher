@@ -4,10 +4,21 @@ Created on 26 Aug 2013
 @author: Aia Catlin
 '''
 import os, ctypes, subprocess, _winreg, threading, sys
-import fileconfig, hardwareconfig
+import fileconfig, hardwareconfig, socket
 
+#doesnt work from service
+#def lockScreen():
+#    return ctypes.windll.user32.LockWorkStation()
+
+#tell the user-started thread to do the locking
 def lockScreen():
-    ctypes.windll.user32.LockWorkStation()
+        s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+        try:
+            s.connect(('127.0.0.1', 22189))
+            s.send('1')
+            s.close()
+        except:
+            return
 
 def standardShutdown():
     shutdownPath = 'shutdown.exe' #probably better to find+use full path

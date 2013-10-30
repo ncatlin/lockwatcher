@@ -27,43 +27,46 @@ lockedStateText = {True:'Locked',False:'Not Locked'}
 def eventHandle(event_type,eventReason):
     locked = hardwareconfig.checkLock()
 
-    while True: #this can be a race condition with configfile alterations. try again if we get a bad reading
+    while True: #this can be a race condition with configfile alterations. keep trying if we get a bad reading
         try:   
             alwaysTriggers = fileconfig.config.get('TRIGGERS','ALWAYSTRIGGERS').split(',')
             lockedTriggers = fileconfig.config.get('TRIGGERS','LOCKEDTRIGGERS').split(',')
             testMode = fileconfig.config.get('TRIGGERS','test_mode')
+            break
         except:
             time.sleep(0.3)
             continue
         
-        if (event_type in alwaysTriggers) or (event_type in lockedTriggers and locked == True):
-            
-            eventQueue.put(("Log","[%s - *Trigger ACTIVATED*]. %s"%(lockedStateText[locked],eventReason)))
-            if testMode == 'False':
-                #allow recovery in situations where the computer would otherwise shutdown as soon as it starts up
-                if time.time() < startupTime + 90:
-                    eventQueue.put(("Log",'Shutdown cancelled - Not allowed within 90 seconds of lockwatcher start'))
-                else:
-                    eventQueue.put(("Kill",eventReason))
+    if (event_type in alwaysTriggers) or (event_type in lockedTriggers and locked == True):
+        
+        eventQueue.put(("Log","[%s - *Trigger ACTIVATED*]. %s"%(lockedStateText[locked],eventReason)))
+        if testMode == 'False':
+            #allow recovery in situations where the computer would otherwise shutdown as soon as it starts up
+            if time.time() < startupTime + 90:
+                eventQueue.put(("Log",'Shutdown cancelled - Not allowed within 90 seconds of lockwatcher start'))
             else:
-                eventQueue.put(("Log",'Shutdown cancelled - test mode active'))
+                eventQueue.put(("Kill",eventReason))
         else:
-            '''log the ignored trigger (but not the 2nd killswitch because a logfile containing
-            every press of the letter 'p' is going to be a mess)'''
-            if event_type not in  ['E_MOUSE_MOVE','E_MOUSE_BTN','E_KILL_SWITCH_2']:
-                eventQueue.put(("Log","[%s - Trigger ignored]. %s"%(lockedStateText[locked],eventReason)))
+            eventQueue.put(("Log",'Shutdown cancelled - test mode active'))
+    else:
+        '''log the ignored trigger (but not the 2nd killswitch because a logfile containing
+        every press of the letter 'p' is going to be a mess)'''
+        if event_type not in  ['E_MOUSE_MOVE','E_MOUSE_BTN','E_KILL_SWITCH_2']:
+            eventQueue.put(("Log","[%s - Trigger ignored]. %s"%(lockedStateText[locked],eventReason)))
 
     
 #running as a service makes exception handling more difficult
-#write log directly instead of relying on eventqueue processing    
+#write log directly instead of relying on eventqueue processing
+VERBOSELOGS = False 
 def debugLog(msg):
+    if VERBOSELOGS != True: return
     logPath = fileconfig.config.get('TRIGGERS','logfile')
     try:
         fd = open(logPath,'a+')
         fd.write(time.strftime('[%x %X]')+str(msg)+'\n') 
         fd.close()
     except:
-        eventQueue.put(('Log','Failed to write debuglog: %s'%msg))
+        pass
 
 #check for logical disk creation events like cdrom insertion          
 class logicalDiskCreateMonitor(threading.Thread):
@@ -131,7 +134,7 @@ class volumeMonitor(threading.Thread):
                 event = self.watcher(timeout_ms=2000)
             except wmi.x_wmi_timed_out:
                 continue
-            eventHandle('E_DEVICE',"Volume Monitor (Drive: '%s' Event: '%s')"%(event.DriveName,deviceMessages[event.EventType]))
+            eventHandle('E_DEVICE',"Volume Monitor (Drive: '%s' Event: '%s')"%(str(event.DriveName),str(deviceMessages[event.EventType])))
             
         CoUninitialize() 
     def terminate(self):
@@ -161,7 +164,7 @@ class deviceMonitor(threading.Thread):
                 event = self.watcher(timeout_ms=2000)
             except wmi.x_wmi_timed_out:
                 continue
-            eventHandle('E_DEVICE',"Device Monitor (%s)"%deviceMessages[event.EventType])
+            eventHandle('E_DEVICE',"Device Monitor (%s)"%str(deviceMessages[event.EventType]))
             
         CoUninitialize ()
         eventQueue.put(("Status",'devices',"Not Running"))
@@ -305,7 +308,9 @@ class emailMonitor(threading.Thread):
             if addressee == intendedAddressee:
                 eventQueue.put(("Mail",keys[1]))
             else:
-                eventQueue.put(('Log',"Got an email with unknown addressee: %s (need addressee %s)"%
+                #ignore our own responses
+                if addressee != fileconfig.config.get('EMAIL','sender_email_address').split('@')[0]:
+                    eventQueue.put(('Log',"Got an email with unknown addressee: %s (need addressee %s)"%
                                 (addressee,intendedAddressee)))
                  
         eventQueue.put(("Status",'email','Not Running'))        
@@ -334,7 +339,7 @@ class RAMMonitor(threading.Thread):
             try:
                 csvfile = open(fileconfig.config.get('TRIGGERS','BALLISTIX_LOG_FILE'),mode='rb')
             except IOError as e:
-                eventQueue.put(("Status",'ram',"Error: Cannot read Temperature.csv"))
+                eventQueue.put(("Status",'ram',"Error: Not Configured"))
                 eventQueue.put(("Log","Unable to open Ballistix MOD Log file: %s. Cannot monitor RAM temperature."%e))
                 return
             except:
@@ -400,6 +405,7 @@ class BTMonitor(threading.Thread):
             return
         eventQueue.put(("Status",'bluetooth','Connecting to device...'))
         
+        #lack of timeout on this is not good
         error, result = winsockbtooth.connect(deviceID)
         if error == True:
             if result == 10060:
@@ -435,6 +441,7 @@ class BTMonitor(threading.Thread):
                         error, result = winsockbtooth.connect(deviceID)
                         attempts = attempts + 1
                     self.socket = result
+                    eventQueue.put(("Log",'Bluetooth: Reconnected to device %s'%deviceIDStr))
 
                 
         eventQueue.put(("Status",'bluetooth','Not Running'))       
@@ -546,12 +553,14 @@ class cameraMonitor(threading.Thread):
                 data = s.recv(16)
             except socket.error:
                 if self.running == False: break
-                print('socket error.. rebinding and trying')
+                debugLog('socket error.. rebinding and retrying')
                 s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+                self.socket = s
                 s.bind( ('127.0.0.1', 22190) )
                 continue
             
             data = data.decode('UTF-8')
+            debugLog('got data: %s'%str(data))
             
             if data == '1': eventHandle('E_CHASSIS_MOTION',"Chassis camera motion detected") 
             elif data == '2': eventHandle('E_ROOM_MOTION',"Room camera motion detected") 
@@ -596,7 +605,7 @@ class configMonitor(threading.Thread):
             
             data = s.recv(1024)
             command = data.decode('UTF-8')             
-            plog('In confmon: '+str(command))
+            debugLog('In confmon: '+str(command))
             if ':' in command: 
                 command,value = command.split(':')
             else: value = None
@@ -643,16 +652,21 @@ class keyboardMonitor(threading.Thread):
         eventQueue.put(("Status",'killSwitch',"Active"))
         while self.running == True:
             if self.reloadKeys == True:
-                primaryKillKeys = {}
-                for key in fileconfig.config.get('TRIGGERS','kbd_kill_combo_1',0).split('+'):
-                    if key == '': break
-                    primaryKillKeys[int(key)] = False
+                try:
+                    primaryKillKeys = {}
+                    for key in fileconfig.config.get('TRIGGERS','kbd_kill_combo_1',0).split('+'):
+                        if key == '': break
+                        primaryKillKeys[int(key)] = False
+                        
                     
-                
-                secondaryKillKeys = {}
-                for key in fileconfig.config.get('TRIGGERS','kbd_kill_combo_2').split('+'):
-                    if key == '': break
-                    secondaryKillKeys[int(key)] = False
+                    secondaryKillKeys = {}
+                    for key in fileconfig.config.get('TRIGGERS','kbd_kill_combo_2').split('+'):
+                        if key == '': break
+                        secondaryKillKeys[int(key)] = False
+                except:
+                    #reading and writing from same file
+                    time.sleep(0.2)
+                    continue
                 self.reloadKeys = False
         
             try:
@@ -680,6 +694,7 @@ class keyboardMonitor(threading.Thread):
                     if keyState == False: break
                 else:
                     eventHandle('E_KILL_SWITCH_1',"Kill switch 1 pressed")
+                    AFroutines.lockScreen()
                     
             if len(secondaryKillKeys.keys()) > 0:        
                 for keyState in secondaryKillKeys.values():
@@ -813,12 +828,12 @@ def startMonitor(threadDict,trigger):
                 threadDict['BTMonitor'].start()  
                 
             elif trigger == 'E_CHASSIS_MOTION' or trigger == 'E_ROOM_MOTION':
-                if 'cameraMonitor' not in threadDict.keys() or threadDict['cameraMonitor'] == None:
+                if not isRunning('cameraMonitor',threadDict):
                     threadDict['cameraMonitor'] = cameraMonitor()  
                     threadDict['cameraMonitor'].start()   
 
-            elif 'E_KILL_SWITCH' in trigger:
-                if 'keyboardMonitor' not in threadDict.keys() or threadDict['keyboardMonitor'] == None:
+            elif 'E_KILL_SWITCH' in trigger or trigger in ['E_MOUSE_MOVE','E_MOUSE_BTN'] :
+                if not isRunning('keyboardMonitor',threadDict):
                     threadDict['keyboardMonitor'] = keyboardMonitor()
                     threadDict['keyboardMonitor'].start()
                     
@@ -850,7 +865,7 @@ def addLogEntry(msg,listeners):
         fd.write(entry) 
         fd.close()
     except:
-        servicemanager.LogErrorMsg(entry)
+        pass
     
     broadcast(listeners,'Log::'+entry)   
     
@@ -860,7 +875,12 @@ class lockwatcher(threading.Thread):
         self.name = 'Lockwatcher'
     def run(self):
         
-        plog('Lockwatcher Started')
+        if fileconfig.config.get('TRIGGERS','debuglog') == 'True':
+            global VERBOSELOGS
+            VERBOSELOGS = True
+            
+        debugLog('Lockwatcher Started')
+        
         global startupTime 
         startupTime = time.time()
         
@@ -904,7 +924,7 @@ class lockwatcher(threading.Thread):
         shutdownActivated = False
         while True:
             event = eventQueue.get(block=True, timeout=None)
-            plog('In eventq: '+str(event))
+            debugLog('Event in queue: '+str(event))
             eventType = event[0]
             
             #--------------trigger activated under shutdown conditions
@@ -1072,7 +1092,7 @@ class lockwatcherSvc (object):
         servicemanager.LogMsg(servicemanager.EVENTLOG_INFORMATION_TYPE,
                               servicemanager.PYS_SERVICE_STARTED,
                               ('Lockwatcher',''))
-        plog('starting service: Run')
+        debugLog('starting service: Run')
         try:
             self.main()
         except:
@@ -1083,11 +1103,3 @@ class lockwatcherSvc (object):
         monitorThread.start()
         while monitorThread.is_alive() == True:
             time.sleep(2) 
-
-def plog(sf):
-        try:
-            fd = open('c:\loglock.txt','a+')
-            fd.write(time.strftime('[%x %X] ')+str(sf)+'\n') 
-            fd.close()
-        except:
-            pass
