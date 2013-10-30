@@ -694,7 +694,6 @@ class keyboardMonitor(threading.Thread):
                     if keyState == False: break
                 else:
                     eventHandle('E_KILL_SWITCH_1',"Kill switch 1 pressed")
-                    AFroutines.lockScreen()
                     
             if len(secondaryKillKeys.keys()) > 0:        
                 for keyState in secondaryKillKeys.values():

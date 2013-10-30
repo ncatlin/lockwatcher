@@ -73,6 +73,7 @@ Source: "C:\Users\UserX\workspace\workspace3\lockwatchwin\dist\Lockwatcher-0.1.w
 Source: "C:\Users\UserX\workspace\workspace3\lockwatchwin\dist\Lockwatcher-0.1.win32\Program Files (x86)\Lockwatcher\favicon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "C:\Users\UserX\workspace\workspace3\lockwatchwin\dist\Lockwatcher-0.1.win32\Program Files (x86)\Lockwatcher\install-interception.exe"; DestDir: "{app}"; Flags: ignoreversion; OnlyBelowVersion: 6.2,6.2
 Source: "C:\Users\UserX\workspace\workspace3\lockwatchwin\dist\Lockwatcher-0.1.win32\Program Files (x86)\Lockwatcher\library.zip"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\UserX\workspace\workspace3\lockwatchwin\dist\Lockwatcher-0.1.win32\Program Files (x86)\Lockwatcher\locker.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "C:\Users\UserX\workspace\workspace3\lockwatchwin\dist\Lockwatcher-0.1.win32\Program Files (x86)\Lockwatcher\lockwatcher.ini"; DestDir: "{app}"; Flags: ignoreversion
 Source: "C:\Users\UserX\workspace\workspace3\lockwatchwin\dist\Lockwatcher-0.1.win32\Program Files (x86)\Lockwatcher\lockwatcher-gui.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "C:\Users\UserX\workspace\workspace3\lockwatchwin\dist\Lockwatcher-0.1.win32\Program Files (x86)\Lockwatcher\LockWatcherSvc.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -402,8 +403,8 @@ Source: "C:\Users\UserX\workspace\workspace3\lockwatchwin\lockwatcher.ini"; Dest
 [Registry]
 Root: "HKLM"; Subkey: "Software\Lockwatcher"; ValueType: string; ValueName: "ConfigPath"; ValueData: "{commonappdata}\Lockwatcher\lockwatcher.ini"; Flags: createvalueifdoesntexist uninsdeletekey noerror
 Root: "HKLM"; Subkey: "Software\Lockwatcher"; ValueType: string; ValueName: "SDScript"; ValueData: "{commonappdata}\Lockwatcher\sd.bat"; Flags: createvalueifdoesntexist uninsdeletekey noerror
-Root: "HKCU"; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Lockwatcher"; ValueData: """{app}\Lockwatcher-gui.exe StartLocker"""; Flags: createvalueifdoesntexist uninsdeletevalue
+Root: "HKCU"; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Lockwatcher"; ValueData: """{app}\Locker.exe"" StartLocker"; Flags: createvalueifdoesntexist uninsdeletevalue
 
 [UninstallRun]
 Filename: "{app}\LockWatcherSvc.exe"; Parameters: "--uninstall Lockwatcher"
-Filename: "{app}\lockwatcher-gui.exe"; Parameters: "KillLocker"
+Filename: "{app}\locker.exe"; Parameters: "KillLocker"
