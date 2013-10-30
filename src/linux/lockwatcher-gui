@@ -173,7 +173,7 @@ class updateListenThread(threading.Thread):
             self.s.close()
             
 
-lockStates = ('Screen Locked','Anytime','Never')
+lockStates = ('Screen Locked','Never','Anytime')
 safeLockStates = ('Screen Locked','Never')
 
 OPT_STATUS = 0
@@ -1303,8 +1303,6 @@ class MainWindow(Frame):
         self.recentKCodes.append(key)
   
     def createMousePanel(self,parent):
-        Label(parent,text='Setting either of these conditions to "anytime" is probably a bad idea',bg='red').pack()
-        
         moveFrame = ttk.Labelframe(parent,text='Mouse Movement',relief=GROOVE)
         moveFrame.pack(fill=X,side=TOP,padx=4,pady=4)
         
@@ -1780,6 +1778,8 @@ if __name__ == "__main__":
     root.after(2000,app.redrawStatus)
     root.after(500,app.processNewEvents)
     root.mainloop()
+    
+    writeConfig()
     
     if DEBUGMODE == True:
         if lockwatcherd.monitorThread != None and lockwatcherd.monitorThread.is_alive():

@@ -8,8 +8,8 @@ import sys,subprocess
 from lockwatcher import hardwareconfig
 
 TRIG_LOCKED = 0
-TRIG_ALWAYS = 1
-TRIG_NEVER = 2
+TRIG_NEVER = 1
+TRIG_ALWAYS = 2
 
 CONFIG_FILE = '/etc/lockwatcher/lockwatcher.conf'
 config = None
@@ -94,27 +94,6 @@ def getActiveTriggers():
     alwaysTriggers = config['TRIGGERS']['alwaystriggers'].split(',')
     return lockedTriggers+alwaysTriggers   
     
-def trigStateChange(combo):
-    new_trigger = combo.get_active()
-    trigger_type = combo.get_title().strip()
-    LOCKED = config['TRIGGERS']['lockedtriggers'].split(',')
-    ALWAYS = config['TRIGGERS']['alwaystriggers'].split(',')
-    
-    if trigger_type in LOCKED:
-        LOCKED.remove(trigger_type) 
-    if trigger_type in ALWAYS:
-        ALWAYS.remove(trigger_type)
-          
-    if new_trigger == TRIG_LOCKED:
-        LOCKED.append(trigger_type)
-    elif new_trigger == TRIG_ALWAYS:
-        ALWAYS.append(trigger_type)
-        
-    config['TRIGGERS']['lockedtriggers'] = str(LOCKED).strip("[]").replace("'","").replace(" ","")
-    config['TRIGGERS']['alwaystriggers'] = str(ALWAYS).strip("[]").replace("'","").replace(" ","")
-    writeConfig()
-
-
 #generate a keycode->keyname mapping
 def generateKCodeTable():
     for path in ['/bin/dumpkeys','/usr/bin/dumpkeys','/usr/local/bin/dumpkeys']:
@@ -179,7 +158,14 @@ def loadConfig():
         trig['script_timeout']='5'
         trig['adapterconids']=''
         trig['adapterdisconids']=''
-        trig['tc_path']=''
+        
+        if os.path.exists('/usr/bin/truecrypt'):
+            trig['tc_path']='/usr/bin/truecrypt'
+        elif os.path.exists('/usr/local/bin/truecrypt'):
+            trig['tc_path']='/usr/local/bin/truecrypt'
+        else:
+            trig['tc_path'] = ''
+            
         trig['logfile']='/var/log/lockwatcher'
         trig['daemonport']='22191'
         trig['test_mode']='False'

@@ -16,7 +16,7 @@ class ToolTip(object):
         if self.tipwindow or not self.text:
             return
         x, y, cx, cy = self.widget.bbox("insert")
-        x = x + self.widget.winfo_rootx() + 27
+        x = x + cx + self.widget.winfo_rootx() + 27
         y = y + cy + self.widget.winfo_rooty() +27
         self.tipwindow = tw = Toplevel(self.widget)
         tw.wm_overrideredirect(1)

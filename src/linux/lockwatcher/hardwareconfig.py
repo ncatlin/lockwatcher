@@ -4,7 +4,7 @@
 Various hardware and system state interrogation routines
 '''
 import subprocess,threading,socket,os,time
-import smtplib, re
+import smtplib, re, sys
 import imapclient
 try:
     import sensors
@@ -195,10 +195,10 @@ class BTScanThread(threading.Thread):
             self.callback("Bluetooth does not appear to be enabled: skipping")
             return None
         try:
-            out, err = scanprocess.communicate(timeout=30)
-        except subprocess.TimeoutExpired:
-            scanprocess.kill()
             out, err = scanprocess.communicate()
+        except:
+            scanprocess.kill()
+            out, err = str(sys.exc_info())
             
         self.callback(out,err)
         return None

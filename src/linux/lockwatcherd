@@ -127,6 +127,7 @@ class lockMonitor(threading.Thread):
         
         #we found xscreensaver running, monitor it for locking
         if 'xscreensaver' in output:
+            #might be an idea to reinvent this wheel in python?
             p = subprocess.Popen(['/usr/bin/xscreensaver-command', '-watch'],stdout=subprocess.PIPE)
             self.process = p
             while self.running == True:
