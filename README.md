@@ -67,6 +67,11 @@ You will need to restart the computer before mouse/keyboard triggers work.
 
 If you have Crucial Ballistix modules you may want to install and run their MOD utility and start temperature logging
 
+Update:
+Apparently Avast now considers install-interception.exe (the keyboard/mouse interception driver installer) to be suspicious.
+Either add it to the exclusion list, install it yourself (from http://oblita.com/interception.html) or just go without 
+mouse/keyboard monitors. Or use Linux.
+
 Why?
 =====
 Operating systems have improved physical security over recent years (eg: by not allowing auto-run when 
