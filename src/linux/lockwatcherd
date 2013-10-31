@@ -55,10 +55,10 @@ def eventHandle(event_type,eventReason):
 
 #handler for pyudev device events
 def device_changed(action,device):
-    if 'virtual' not in device:
+    if 'virtual' not in str(device):
         eventHandle('E_DEVICE',"Device event trigger. Event: %s, Device: %s"%(action,device))
     else:
-        #testing on lubuntu had a /sys/devices/virtual/bdi device change happen on screen lock/unlock
+        #testing on lubuntu 13 had a /sys/devices/virtual/bdi device change happen on screen lock/unlock
         eventQueue.put(("log","Ignoring virtual device change: %s - %s"%(action,device)))
     
 #handler for dbus screensaver activity

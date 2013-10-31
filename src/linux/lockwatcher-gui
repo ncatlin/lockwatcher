@@ -43,9 +43,14 @@ DEBUGMODE = False
 CREATELW = False
 if DEBUGMODE == True:
     if CREATELW == True:
-        import lockwatcherd
-        lockwatcherd.createLockwatcher()
-        lockwatcherd.monitorThread.start()
+        try:
+            import lockwatcherd
+            lockwatcherd.createLockwatcher()
+            lockwatcherd.monitorThread.start()
+        except:
+            print('lockwatcherd.py not found - cancelling debug mode')
+            DEBUGMODE = False
+            CREATELW = False
         
 lwMonitorThread = None
 root = Tk()
@@ -500,6 +505,7 @@ class MainWindow(Frame):
         
         logPath = StringVar()
         
+        time.sleep(0.1) #AttributeError: 'list' object has no attribute 'find'
         confLogPath = fileconfig.config['TRIGGERS']['logfile']
         logPath.set(confLogPath)
         
@@ -684,6 +690,7 @@ class MainWindow(Frame):
         
         devIDVar = StringVar()
         self.devIDVar = devIDVar
+        time.sleep(0.1)
         devIDVar.set(fileconfig.config['TRIGGERS']['bluetooth_device_id'])
         devIDVar.trace("w", lambda name, index, mode, devIDVar=devIDVar: self.changeEntryBox('TRIGGERS:bluetooth_device_id',self.devIDVar))
         
