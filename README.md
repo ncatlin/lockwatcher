@@ -53,7 +53,7 @@ If your camera monitors give an error about needing libjpeg.so.8, you may want t
 
 http://rpm.pbone.net/index.php3?stat=3&search=libjpeg8&srodzaj=3
 
-Windows Installation (Windows 7, 64 bit)
+Windows Installation (64 bit)
 ================
 *The free, open-source iSpy software is required for room and chassis motion detection
 
@@ -70,7 +70,7 @@ If you have Crucial Ballistix modules you may want to install and run their MOD 
 Update:
 Apparently Avast now considers install-interception.exe (the keyboard/mouse interception driver installer) to be suspicious.
 Either add it to the exclusion list, install it yourself (from http://oblita.com/interception.html) or just go without 
-mouse/keyboard monitors. Or use Linux.
+mouse/keyboard monitors like the Windows 8 users. Or use Linux.
 
 Why?
 =====
