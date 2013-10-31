@@ -186,13 +186,12 @@ class lockMonitor(threading.Thread):
                         procName = cmdLine[0].rpartition('/')[2].rstrip(']')
                         
                         #eventQueue.put(('log','process started: '+procName)) #useful for debugging
-                        if procName not in lockProgramList:
-                            continue
-                        else:
+                        if procName in lockProgramList or ('lightdm' in procName and '-greeter' in procName):
                             lockState = True
                             eventQueue.put(('lock',True))
                             eventQueue.put(('log','Detected screen locked'))
                             break
+                        else: continue
                     else:
                         procList = newProcList
                         
@@ -470,6 +469,7 @@ class bluetoothMon(threading.Thread):
         self.name = "BluetoothMonThread"
         
     def run(self):
+        currentlyActive = False
         
         BTDevID = fileconfig.config['TRIGGERS']['BLUETOOTH_DEVICE_ID']
         if BTDevID == '':
@@ -492,38 +492,56 @@ class bluetoothMon(threading.Thread):
             eventQueue.put(('status','bluetooth',"Error: Connection Failed"))
             return
         
-        eventQueue.put(('status','bluetooth',"Active"))
-        
         self.running = True
         while self.running == True:
-            try:
+            
+            if currentlyActive == False:
+                timeout = 4
+            else:
+                timeout = 15
+            ready = select.select([self.s], [], [],timeout)
                 
+            if self.running == False: break
+            if ready[0] == []: 
+                if currentlyActive != True: 
+                    eventQueue.put(('status','bluetooth',"Active"))
+                    currentlyActive = True
+                continue
+            
+            try:
+                self.s.settimeout(10)
                 self.s.recv(1024)
-            except socket.timeout:
-                pass
             except:
-                if self.running == False: 
-                    break
-                    
                 eventQueue.put(('log',"Bad connection to bluetooth device"))
-                eventQueue.put(('status','bluetooth',"Error: Connection Lost"))
+                if currentlyActive == True:
+                    eventQueue.put(('status','bluetooth',"Error: Connection Lost"))
+                    currentlyActive = False
+                else:
+                    eventQueue.put(('status','bluetooth',"Error: Connection Failed"))
+                    
                 eventHandle('E_BLUETOOTH',None)
                 time.sleep(20)
-            
-            self.s.close()
-            self.s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
-            self.s.settimeout(600)
 
-            try:
-                eventQueue.put(('status','bluetooth',"Connecting..."))
-                self.s.connect((fileconfig.config['TRIGGERS']['BLUETOOTH_DEVICE_ID'],bluetoothPort)) 
-            except:
-                continue
+                self.s.close()
+                reconnected = False
+                while reconnected == False:
+                    self.s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
+                    self.s.settimeout(20)
+                    try:
+                        eventQueue.put(('status','bluetooth',"Connecting..."))
+                        self.s.connect((fileconfig.config['TRIGGERS']['BLUETOOTH_DEVICE_ID'],bluetoothPort))
+                        reconnected = True
+                    except:
+                        eventQueue.put(('status','bluetooth',"Error: Reconnect Failed"))
+                        continue
             
         eventQueue.put(('status','bluetooth',"Not Started"))   
          
     def stop(self):
         self.running = False
+        try:
+            self.s.shutdown(socket.SHUT_RD)
+        except: pass
         self.s.close()
 
 def setupIMAP(config):
