@@ -35,18 +35,23 @@ except:
     GOTSENSORS = False
 
 DAEMONPORT = int(fileconfig.config['TRIGGERS']['daemonport'])
-
 eventQueue = queue.Queue()
+startupTime = None
 
 lockedStateText = {True:'Locked',False:'Not Locked'}
 def eventHandle(event_type,eventReason):
     locked = hardwareconfig.checkLock()
-
-    if (event_type in fileconfig.config['TRIGGERS']['ALWAYSTRIGGERS'].split(',')) or \
-        (event_type in fileconfig.config['TRIGGERS']['LOCKEDTRIGGERS'].split(',') and locked == True):
+    alwaysTriggers = fileconfig.config['TRIGGERS']['ALWAYSTRIGGERS'].split(',')
+    lockedTriggers = fileconfig.config['TRIGGERS']['LOCKEDTRIGGERS'].split(',')
+    testMode = fileconfig.config['TRIGGERS']['TEST_MODE']
+    
+    if (event_type in alwaysTriggers) or (event_type in lockedTriggers and locked == True):
         eventQueue.put(("log","[%s - Trigger %s ACTIVATED]: %s"%(lockedStateText[locked],event_type,eventReason)))
-        if fileconfig.config['TRIGGERS']['TEST_MODE'] == 'False':
-            eventQueue.put(("kill",event_type,eventReason))
+        if testMode == 'False':
+            if time.time() < startupTime + 90:
+                eventQueue.put(("log",'Shutdown cancelled - Not allowed within 90 seconds of lockwatcher start'))
+            else:
+                eventQueue.put(("kill",event_type,eventReason))
         else:
             eventQueue.put(("log",'Shutdown cancelled - test mode active'))
     else:
@@ -222,7 +227,6 @@ class lockMonitor(threading.Thread):
         
                             
 #waits for events from config programs and the dbus monitor
-monitoringRoom = False
 class IPCMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
@@ -1161,7 +1165,8 @@ class lockwatcher(threading.Thread):
             
     def mainloop(self):
         addLogEntry('Initialising lockwatcher')
-        global monitoringRoom
+        global startupTime 
+        startupTime = time.time()
         
         listeners = []  #keep active connections to config programs here
         threadDict = {} #keep the running threads here
