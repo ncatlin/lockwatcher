@@ -36,7 +36,7 @@ sudo easy_install-3.3 IMAPClient pyudev
 
 Extract the software, install, run, configure
 ```
-tar -xvzf Lockwatcher*
+tar -xf Lockwatcher*
 
 cd Lockwatcher*
 
