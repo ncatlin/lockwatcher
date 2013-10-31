@@ -178,7 +178,7 @@ Now the tricky bit: Suspend it in the computer case so it can swing freely. Use 
  the camera is free to swing a little when the case itself is moved. It also needs to be plugged in to USB, 
  preferably to an internal USB port.
  
- ![It is easier if your case is not cable-managment hell](casepicture1.jpg)
+ ![It is easier if your case is not cable-managment hell](casepicture1.jpg "It is easier if your case is not cable-managment hell")
  
 If the case is securely shut (preferably with a lock) then any movement of the case or attempts to open it up will
  either move the camera or change the lighting conditions in the chassis, triggering a shutdown long before the
