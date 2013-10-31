@@ -61,6 +61,7 @@ VERBOSELOGS = False
 def debugLog(msg):
     if VERBOSELOGS != True: return
     logPath = fileconfig.config.get('TRIGGERS','logfile')
+    if not os.path.exists(logPath): return
     try:
         fd = open(logPath,'a+')
         fd.write(time.strftime('[%x %X]')+str(msg)+'\n') 
@@ -861,6 +862,7 @@ def broadcast(listeners,msg):
 def addLogEntry(msg,listeners):
     entry = time.strftime('[%x %X] ')+msg+'\n'
     logPath = fileconfig.config.get('TRIGGERS','logfile')
+    if not os.path.exists(logPath): return
     try:
         fd = open(logPath,'a+')
         fd.write(entry) 

@@ -60,6 +60,9 @@ def loadConfig():
     except:
         key = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,"SOFTWARE\Wow6432Node\Lockwatcher")
         CONFIG_FILE = str(_winreg.QueryValueEx(key,'ConfigPath')[0])
+    
+    configDir = os.path.split(CONFIG_FILE)[0]
+    
     time.sleep(0.1)
     if not os.path.exists(CONFIG_FILE) or os.path.getsize(CONFIG_FILE)<20:
         global config
@@ -82,7 +85,8 @@ def loadConfig():
         config.set('TRIGGERS','tc_path','')
         config.set('TRIGGERS','ispy_path','')
         config.set('TRIGGERS','room_cam_id','')
-        config.set('TRIGGERS','logfile','')
+        defaultLogPath = os.path.join(configDir,'lw-log.txt')
+        config.set('TRIGGERS','logfile',defaultLogPath)
         config.set('TRIGGERS','debuglog','False')
         config.set('TRIGGERS','test_mode','False')
         
