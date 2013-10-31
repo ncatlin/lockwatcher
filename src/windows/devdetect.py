@@ -284,10 +284,6 @@ class emailMonitor(threading.Thread):
                     
                     if connectionFails > 0: time.sleep(connectionFails * 3)
                     connectionFails += 1
-                    if connectionFails >= 3:
-                        eventQueue.put(("Status",'email','Error: Too many failed attempts'))
-                        eventQueue.put(('Log',"IMAP connection lost. Giving up."))
-                        return
                     try:
                         server = setupIMAP()
                         self.server = server

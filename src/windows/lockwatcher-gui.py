@@ -1633,7 +1633,12 @@ class MainWindow(Frame):
         sdScript.insert(INSERT,battext)
         self.sdScript = sdScript
         
-        saveBtn = Button(parent,text='Save',command=self.writeSDScript).pack()
+        try:
+            fd = open(scriptPath,'a+')
+            fd.close()
+            Button(parent,text='Save',command=self.writeSDScript).pack()
+        except:
+            Label(parent,text='This must be run in administrator mode to save changes to the shutdown script',background='red').pack(pady=5)
         
     def writeSDScript(self):
         try:
