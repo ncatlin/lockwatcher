@@ -7,9 +7,7 @@
 
     <link rel="stylesheet" href="stylesheets/styles.css">
     <link rel="stylesheet" href="stylesheets/pygment_trac.css">
-    <script src="javascripts/scale.fix.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-
     <!--[if lt IE 9]>
     <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
     <![endif]-->
@@ -19,7 +17,10 @@
       <header>
         <h1>lockwatcher</h1>
         <p>Anti live-forensics monitor program: watches for signs of tampering, purges crypto keys and shuts everything down.</p>
+
         <p class="view"><a href="https://github.com/ncatlin/lockwatcher">View the Project on GitHub <small>ncatlin/lockwatcher</small></a></p>
+
+
         <ul>
           <li><a href="https://github.com/ncatlin/lockwatcher/zipball/master">Download <strong>ZIP File</strong></a></li>
           <li><a href="https://github.com/ncatlin/lockwatcher/tarball/master">Download <strong>TAR Ball</strong></a></li>
@@ -30,10 +31,78 @@
         <h1>
 <a name="lockwatcher" class="anchor" href="#lockwatcher"><span class="octicon octicon-link"></span></a>lockwatcher</h1>
 
-<p>Anti live-forensics monitor program: watches for signs of tampering, purges crypto keys and shuts everything down.</p>
+<p>Anti live-forensics monitor program: watches for signs of tampering or forensic acquisition, purges encryption keys and shuts 
+everything down.</p>
 
 <p>It was thought up when writing a proof of concept for defeating live forensic analysis as part of a masters thesis
  that evaluated anti-forensic techniques.</p>
+
+<h1>
+<a name="download" class="anchor" href="#download"><span class="octicon octicon-link"></span></a>Download</h1>
+
+<p>Linux 32-bit <a href="https://github.com/ncatlin/lockwatcher/raw/master/Lockwatcher-0.1-32.tar.gz">https://github.com/ncatlin/lockwatcher/raw/master/Lockwatcher-0.1-32.tar.gz</a></p>
+
+<p>Linux 64-bit <a href="https://github.com/ncatlin/lockwatcher/raw/master/Lockwatcher-0.1.tar.gz">https://github.com/ncatlin/lockwatcher/raw/master/Lockwatcher-0.1.tar.gz</a></p>
+
+<p>Windows 64-bit <a href="https://github.com/ncatlin/lockwatcher/raw/master/lockwatcher-setup.exe">https://github.com/ncatlin/lockwatcher/raw/master/lockwatcher-setup.exe</a></p>
+
+<h1>
+<a name="linux-installation" class="anchor" href="#linux-installation"><span class="octicon octicon-link"></span></a>Linux Installation</h1>
+
+<p>Install the dependencies</p>
+
+<p><em>On Debian/-buntu/mint/etc:</em></p>
+
+<pre><code>sudo apt-get install python3 python3-setuptools python3-tk python3-pillow ifplugd python3-dbus
+
+sudo easy_install3 IMAPClient pyudev
+</code></pre>
+
+<p><em>On fedora</em></p>
+
+<pre><code>sudo yum install python3 python3-setuptools python3-tkinter python3-pillow ifplugd python3-dbus python3-gobject
+
+sudo easy_install-3.3 IMAPClient pyudev
+</code></pre>
+
+<p>Extract the software, install, run, configure</p>
+
+<pre><code>tar -xvzf Lockwatcher*
+
+cd Lockwatcher*
+
+sudo python3 setup.py install
+
+sudo lockwatcherd start
+
+lockwatcher-gui
+</code></pre>
+
+<p>If python3-imaging or python3-pillow isn't available then just skip it.</p>
+
+<p>If your camera monitors give an error about needing libjpeg.so.8, you may want to install libjpeg8. </p>
+
+<p><a href="http://rpm.pbone.net/index.php3?stat=3&amp;search=libjpeg8&amp;srodzaj=3">http://rpm.pbone.net/index.php3?stat=3&amp;search=libjpeg8&amp;srodzaj=3</a></p>
+
+<h1>
+<a name="windows-installation-64-bit" class="anchor" href="#windows-installation-64-bit"><span class="octicon octicon-link"></span></a>Windows Installation (64 bit)</h1>
+
+<p>*The free, open-source iSpy software is required for room and chassis motion detection</p>
+
+<p>Get it here: <a href="http://www.ispyconnect.com/download.aspx">http://www.ispyconnect.com/download.aspx</a>
+Install it, configure your cameras (covered later).</p>
+
+<ul>
+<li>Run the installer</li>
+<li>Configure it</li>
+</ul><p>You will need to restart the computer before mouse/keyboard triggers work.</p>
+
+<p>If you have Crucial Ballistix modules you may want to install and run their MOD utility and start temperature logging</p>
+
+<p>Update:
+Apparently Avast now considers install-interception.exe (the keyboard/mouse interception driver installer) to be suspicious.
+Either add it to the exclusion list, install it yourself (from <a href="http://oblita.com/interception.html">http://oblita.com/interception.html</a>) or just go without 
+mouse/keyboard monitors like the Windows 8 users. Or use Linux.</p>
 
 <h1>
 <a name="why" class="anchor" href="#why"><span class="octicon octicon-link"></span></a>Why?</h1>
@@ -45,28 +114,27 @@ the screen is locked) but even if they ignore a CD being inserted into the drive
 <p>This is bad. </p>
 
 <p>lockwatcher is built around the assumption that if someone tries to use your computer while it is locked
- then they are trying to get your live data, so it needs to be destroyed.</p>
+ then they are trying to get your live data, so that data needs to be destroyed and the machine rendered inaccessible.</p>
 
 <p><em>How lockwatcher works</em></p>
 
 <ul>
-<li><p>You lock computer whenever not physically present at it.</p></li>
-<li><p>"Interaction" with the computer while locked triggers an emergency shutdown.</p></li>
-<li><p>Encryption keys are purged from memory and the computer shuts down to help prevent live data from being acquired.</p></li>
+<li><p>You lock your computer whenever not physically present at it.</p></li>
+<li><p>Interaction* with the computer while locked triggers an emergency shutdown.</p></li>
+<li><p>Encryption keys are purged from memory and the computer shuts down.</p></li>
 </ul><h1>
-<a name="caveats" class="anchor" href="#caveats"><span class="octicon octicon-link"></span></a>Caveats:</h1>
+<a name="caveats" class="anchor" href="#caveats"><span class="octicon octicon-link"></span></a>Caveats</h1>
 
-<p>The software was designed for running on live-CD/live-USB Linux, where dismounting (deniably) encrypted storage and 
+<p>The software was designed for running on live-CD/live-USB Linux, where dismounting encrypted storage and 
 powering down is accomplished in 3-5 seconds or less, with little warning given to the attacker. </p>
 
 <p>There is a Windows version but even forced shutdown is SLOW and obvious, and the difficulty in running it 
 from ramdisk (live-USB,etc) means you are likely to have lots of interesting things on disk even if they can't 
-get your RAM out in time.</p>
+get your RAM out in time. The driver used to monitor keyboard and mouse events (<a href="https://github.com/oblitum/Interception">https://github.com/oblitum/Interception</a>)
+isn't compatible with Windows 8 so those triggers won't work.</p>
 
-<p>It is specifically designed for defeating live memory acquisition.</p>
-
-<p>It does not protect against disk analysis. That is what encryption is for, but lockwatcher will help keep your
-keys safe.</p>
+<p>It is specifically designed for defeating live memory acquisition. It does not protect against disk analysis. 
+That is what encryption is for, but lockwatcher will help keep your keys safe.</p>
 
 <p>It does not stop malicious software from stealing your data. Good information security practice will help, running 
 a live distribution from read-only media will help and doing your sensitive stuff on a computer that does not 
@@ -96,6 +164,15 @@ the computer is running in.</p>
 <li>Keyboard kill-switch</li>
 </ul><p>One or more keyboard keys can be set to trigger an emergency shutdown if you are at the computer when it is required.</p>
 
+<p>You can also designate a key to shutdown the computer if it is pressed while locked. This can be given to attackers 
+as part of a false password if you are forced to give up your screen-unlocking password. What happens after that might 
+not be pretty though.</p>
+
+<ul>
+<li>Mouse kill-switch</li>
+</ul><p>If you think your attacker might move your mouse around or click buttons to see if the screen is locked, this trigger
+ can help. Obviously you will have to unlock the system without using the mouse functions, but it is an easy trap to set.</p>
+
 <ul>
 <li>Network interface monitoring</li>
 </ul><p>If the standard procedure of isolating the computer from the network is followed, or an attacker connects/disconnects
@@ -104,9 +181,9 @@ a network interface to access traffic then lockwatcher will notice this and trig
 <ul>
 <li>Bluetooth monitoring</li>
 </ul><p>lockwatcher can connect to a Bluetooth device and trigger a shutdown if this connection is severed. This is useful 
-if your devices are removed, turned off or placed in a shielded container by an attacker. If you have a device which
+if your devices are confiscated, turned off or placed in a shielded container by an attacker. If you have a device which
  can be quickly turned off or parted from its batteries then this becomes a handy portable kill-switch when you are 
- not at the computer.</p>
+ not in arms-reach of the computer.</p>
 
 <ul>
 <li>RAM temperature detection</li>
@@ -114,18 +191,20 @@ if your devices are removed, turned off or placed in a shielded container by an 
 (see: <a href="https://citp.princeton.edu/research/memory/">https://citp.princeton.edu/research/memory/</a>), Lockwatcher can monitor the temperature of certain memory 
 modules and trigger if their temperature falls below a certain point.</p>
 
-<p>The availability of memory modules with temperature sensors is bad so at the moment lockwatcher only
+<p>The availability of memory modules with temperature sensors is horrendous at the moment so lockwatcher only
 supports monitoring Crucial Ballistix modules, and only on Windows (requires installing the Ballistix MOD utility).
 Anyone who would like to contribute code to read temperature directly and from other types of RAM (like 
-HWMonitor does) would be appreciated.</p>
+HWMonitor does) would be appreciated. The test system motherboard wouldn't even support decode-dimms, so I added a
+ motherboard temperature monitoring trigger for the sake of it and gave up. Use chassis movement monitoring if you
+  are worried about this kind of attack.</p>
 
 <ul>
 <li>Chassis movement detection</li>
 </ul><p>A much better defence against RAM acquisition, but fiddly to set up and requires some hardware.</p>
 
-<p>You need a webcam. A £5 no-brand horror will be fine but one without a microphone or a microphone you have 
-disabled would be a good idea for obvious reasons. The camera or inside of your case should also have an LED or two 
-to give the case a bit of light inside.</p>
+<p>You need a webcam. A £5 no-brand horror will be fine but one without a microphone (or a microphone you have 
+disabled) would be a good idea for obvious reasons. The camera or inside of your case should have an LED or two 
+to give a bit of light inside.</p>
 
 <p>Now the tricky bit: Suspend it in the computer case so it can swing freely. Use tape, string, whatever: just make sure
  the camera is free to swing a little when the case itself is moved. It also needs to be plugged in to USB, 
@@ -137,11 +216,11 @@ to give the case a bit of light inside.</p>
  either move the camera or change the lighting conditions in the chassis, triggering a shutdown long before the
  RAM or BIOS can be tampered with. This also helps prevent hot-plug attacks against self-encrypting hard drives.</p>
 
-<p>This trigger (and the one below) requires some free motion detection software: motion on Linux, iSpy on Windows. </p>
+<p>On Windows this trigger (and the one below) requires the free open-source 'iSpy' software. </p>
 
 <ul>
 <li>Room movement detection</li>
-</ul><p>A camera can be pointed at the room to shut down when any motion is detected. Not too useful if pets/family/coworkers
+</ul><p>A camera can be pointed at the room to allow a shutdown when any motion is detected. Not too useful if pets/family/coworkers
  are expected to be in the same room as the computer while you are away.</p>
 
 <p>This trigger can be activated and deactivated remotely so the system doesn't shutdown 
@@ -163,48 +242,21 @@ whenever you return to the computer. </p>
 <h1>
 <a name="bonus-points" class="anchor" href="#bonus-points"><span class="octicon octicon-link"></span></a>Bonus points</h1>
 
-<p>Anything that increases the time between trigger activation and having your memory ripped out is helpful. Keep your system chassis secure, and tucked away so that doing anything with it requires moving it around and setting off the chassis motion monitor.</p>
+<p>Anything that increases the time between trigger activation and having your memory ripped out is helpful. Keep your 
+system chassis secure, and tucked away so that doing anything with it requires moving it around and 
+setting off the chassis motion monitor.</p>
 
 <p>Password protect your BIOS to stop someone rebooting straight into a memory analysis CD. </p>
 
-<p>If your BIOS can be configured to perform a complete memory check on start up, (or even better to wipe memory) then activate those options. Yes it will require a password every time your system boots up and slow the process down, but some level of inconvenience has to be accepted.</p>
+<p>If your BIOS can be configured to perform a complete memory check on start up, (or even better to wipe memory) 
+then activate those options. Yes it will require a password every time your system boots up and slow the 
+process down, but some level of inconvenience has to be accepted.</p>
 
-<p>Not important, but If your cables allow it you can swap the reset and power switch pins on the motherboard. An attempt to use the reset button to do a hard reset will trigger a standard shutdown instead, which causes Truecrypt to dismount its volumes. </p>
-
-<h1>
-<a name="linux-installation" class="anchor" href="#linux-installation"><span class="octicon octicon-link"></span></a>Linux Installation</h1>
-
-<p>These packages are required</p>
-
-<ul>
-<li><p>sudo apt-get install motion ifplugd lm-sensors </p></li>
-<li><p>Install Imapclient (<a href="https://pypi.python.org/pypi/IMAPClient/0.10.2">https://pypi.python.org/pypi/IMAPClient/0.10.2</a>) by whatever method is convenient </p></li>
-<li><p>[download/unzip lockwatcher]</p></li>
-</ul><p>Initial configuration:</p>
-
-<ul>
-<li>sudo setupfiles/setup.sh</li>
-</ul><p>To configure further via GUI:</p>
-
-<ul>
-<li>sudo src/lockwatcher-gui/lockwatcher-gui.py</li>
-</ul><p><img src="guipicture.png" alt="Configure further via the GUI"></p>
-
-<p>sudo src/lockwatcher.py start</p>
+<p>Not important, but If your cables allow it you can swap the reset and power switch pins on the motherboard. 
+An attempt to use the reset button to do a hard reset will trigger a standard shutdown instead, which causes 
+Truecrypt to dismount its volumes. </p>
 
 <h1>
-<a name="windows-installation" class="anchor" href="#windows-installation"><span class="octicon octicon-link"></span></a>Windows Installation</h1>
-
-<p>*The free, open-source iSpy software is required for room and chassis motion detection</p>
-
-<p>Get it here: <a href="http://www.ispyconnect.com/download.aspx">http://www.ispyconnect.com/download.aspx</a>
-Install it, configure your cameras (covered later).</p>
-
-<ul>
-<li>Install lockwatcher from the msi, or just extract the .zip somewhere</li>
-<li>Run lockwatcher.exe, play with the settings</li>
-<li>Click 'Start lockwatcher' on the status panel</li>
-</ul><h1>
 <a name="using-remote-control" class="anchor" href="#using-remote-control"><span class="octicon octicon-link"></span></a>Using remote control</h1>
 
 <p>(I know this is a pain in the neck, hopefully a native app will be up and running for iOS and Android at some point)
@@ -224,11 +276,12 @@ You need an email account with smtp and imap access, preferably a throwaway acco
 
 <p>Q.Can lockwatcher wipe files instead of just shutting down? </p>
 
-<p>A.You can add relevant commands to the custom batch script which will be executed on emergency shutdown, but it takes a long time and makes false positive triggers a much bigger problem.</p>
+<p>A.You can add relevant commands to the custom batch script which will be executed on emergency shutdown, 
+but it takes a long time and makes false positive triggers a much bigger problem.</p>
 
 <p>Q.Curse you authoritarian pigdog fascist, I want to use your stuff but it is riddled with government backdoors!</p>
 
-<p>A. You can go through the source code if you want, most of it is written in Python 3 so it isn't even 
+<p>A. You can go through the source code if you want, most of it is written in Python so it isn't even 
 compiled on Linux. The lack of Windows access to Bluetooth sockets (with Python 3, try it if you don't believe me) 
 and user defined Signals means a bit of C code is in the Win32 distribution as little executables, 
 which is what Avast flags as suspicious occasionally. They are easy to compile with cygwin.</p>
@@ -245,22 +298,34 @@ which is what Avast flags as suspicious occasionally. They are easy to compile w
 <li><p>RAM temperature monitoring on Linux. My motherboard won't play nice with decode-dimms and 
 I haven't had much luck doing what the ballistix MOD utility does. 
 Also: other types of RAM on both operating systems.</p></li>
-<li><p>Testing and better install configurations for other linux distros</p></li>
+<li><p>Testing and better install configurations for other Linux distros. Start-on-Startup in particular I'm not sure
+how to do in a distribution-independent way.</p></li>
+<li><p>If anyone could write something like this for Android/iOS/etc then please do: pair-locking is nice but possibly
+vendor-surmountable. The exposure of mobile devices to seizure and acquisition at borders or on arrest, plus 
+their critical reliance on a tiny stable of acquisition tools makes them the most deserving hosts of this kind 
+of tool. Storage wiping would even be handy because of easier false-positive avoidance, but I don't know if 
+it can be done without jailbreaking at the very least.</p></li>
+<li><p>Python was probably a bad choice for this. Consider a C version. </p></li>
+</ul><p>Windows Version:</p>
+
+<ul>
 <li><p>I'm not happy with the Windows shutdown speed at all, it might be worth implementing RAM erasing instead.
-I can't get firewire attacks to work on Window 7 so whether the shutdown process interrupts 
-RAM acquisition in time or not is a mystery.</p></li>
-<li><p>If anyone could write something like this for Android/iOS/etc then please do. The exposure of mobile devices to 
-seizure and acquisition at borders or on arrest, plus their critical reliance on a tiny stable of acquisition tools
-makes them the most deserving hosts of this kind of tool. Storage wiping would even be handy, but I don't know 
-if it can be done without jailbreaking at the very least.</p></li>
+I can't get firewire attacks to work on Windows 7 so whether the shutdown process interrupts 
+RAM acquisition in time or not is a mystery. Being able to disconnect hardware devices would be a big help, 
+like how VMWare or VirtualBox can steal your USB devices, but I haven't looked into how to do that yet.</p></li>
+<li><p>Get keyboard/mouse interception working on Windows 8. If it isn't run as a service then GetAsyncKeystate 
+can get keypresses when the screen isn't locked but that isn't much. Come to think of it the Interception driver in
+general is far from ideal even without the Win 8 problem: there is no source code for the installer and no licence.</p></li>
+<li><p>Ditch the iSpy requirement. Slicing and dicing Motion for use with lockwatcher was easy because it 
+isn't a GUI program but I took one look at the iSpy code and went "nope". </p></li>
 </ul>
       </section>
+      <footer>
+        <p>This project is maintained by <a href="https://github.com/ncatlin">ncatlin</a></p>
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
     </div>
-    <footer>
-      <p>Project maintained by <a href="https://github.com/ncatlin">ncatlin</a></p>
-      <p>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></p>
-    </footer>
-    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+    <script src="javascripts/scale.fix.js"></script>
     
   </body>
 </html>
