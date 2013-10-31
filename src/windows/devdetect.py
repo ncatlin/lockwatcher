@@ -290,11 +290,12 @@ class emailMonitor(threading.Thread):
                         return
                     try:
                         server = setupIMAP()
-                    except socket.gaierror:
+                        self.server = server
+                        server.idle()
+                        eventQueue.put(("Status",'email','Active'))
+                    except:
                         eventQueue.put(("Status",'email',"Error: Connect Failed")) 
-                        return
-                    self.server = server
-                    server.idle()
+                        
                 continue
             
             #fetch header data using the sequence id of the new mail  
@@ -431,17 +432,22 @@ class BTMonitor(threading.Thread):
                         return
                     
                     eventHandle('E_BLUETOOTH',"Bluetooth connection lost")
+                    eventQueue.put(("Status",'bluetooth','Error: Connection Lost'))
                     
                     #if we didnt lose connection under trigger conditions
                     #assume user wants auto-reconnect (?)
                     error = True
                     attempts = 0
                     while error == True and attempts < 7:
+                        eventQueue.put(("Status",'bluetooth','Error: Connection Failed'))
                         time.sleep(10*1+(attempts*5))
+                        eventQueue.put(("Status",'bluetooth','Connecting...'))
                         error, result = winsockbtooth.connect(deviceID)
                         attempts = attempts + 1
                     self.socket = result
+                    
                     eventQueue.put(("Log",'Bluetooth: Reconnected to device %s'%deviceIDStr))
+                    eventQueue.put(("Status",'bluetooth','Active'))
 
                 
         eventQueue.put(("Status",'bluetooth','Not Running'))       
