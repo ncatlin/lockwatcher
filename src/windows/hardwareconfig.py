@@ -47,7 +47,7 @@ class interceptListenThread(threading.Thread):
                     stroke2KeyStroke( stroke, dest = keyStroke )
                     send(context,device, keyStroke,1)
                     kCode = win32api.MapVirtualKey(keyStroke.code,3) #MAPVK_VSC_TO_VK_EX
-                    
+
                     if kCode in vkDict.keys():
                         keyname = vkDict[kCode]
                     else: keyname = 0
@@ -76,6 +76,10 @@ class interceptListenThread(threading.Thread):
     def stop(self):
         self.listening = False
 
+#this is used by lockwatcher-gui to setup the killswitches
+#interception captures a different set of keys, so a bit of trial and error
+#may be needed to set up a working killswitch
+#See: https://github.com/oblitum/Interception/issues/2
 class kbdHookListenThread(threading.Thread):
     def __init__(self,keyQueue):
         threading.Thread.__init__(self) 
@@ -86,6 +90,8 @@ class kbdHookListenThread(threading.Thread):
         self.listening = True
         heldKeys = []
         releasedKeys=[]
+        
+        ignoredKeys = [13] #the keys interception cannot capture (need better list)
         
         while self.listening == True:
             time.sleep(0.002)
@@ -103,6 +109,8 @@ class kbdHookListenThread(threading.Thread):
             #find any new key presses
             for charkey in range(0x7,0xFF):
                 if win32api.GetAsyncKeyState(charkey)==-32767:
+                    #interception doesn't pick up on the numpad enter key
+                    if charkey in ignoredKeys: continue
                     if charkey not in heldKeys:
                         heldKeys.append(charkey)
                         if charkey in vkDict.keys():
