@@ -10,9 +10,11 @@ CONFIG_FILE = None
 config = None
 
 def writeConfig():
-    with open(CONFIG_FILE, 'w') as configfile:
+    try:
+        with open(CONFIG_FILE, 'w') as configfile:
             config.write(configfile)#,space_around_delimiters=False)
-            
+    except: print('Failed to write config file')
+        
 def checkBtnChanged(btn):
 
     btnName = btn.get_name()
