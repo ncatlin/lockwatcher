@@ -6,6 +6,8 @@ Various hardware and system state interrogation routines
 import subprocess,threading,socket,os,time
 import smtplib, re, sys
 import imapclient
+import bluetooth
+
 try:
     import sensors
     GOTSENSORS = True
@@ -126,8 +128,6 @@ class temperatureMonitor(threading.Thread):
     def terminate(self):
         self.die = True
 
-
-import bluetooth
 class BTTestThread(threading.Thread):
     def __init__(self,callback,deviceID):
         threading.Thread.__init__(self) 
@@ -251,7 +251,7 @@ class emailTestThread(threading.Thread):
             except socket.timeout:
                 resultS = 'Connection Timeout'
             except socket.gaierror:
-                resultS = 'Connection Failed %s'%str(sys.exc_info())
+                resultS = 'Connection Failed'
             except:
                 resultS = 'Connection failed: %s'%sys.exc_info()[0]
             else:

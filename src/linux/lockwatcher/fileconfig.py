@@ -152,7 +152,7 @@ def loadConfig():
         config.set('TRIGGERS','keyboard_device','None')
         config.set('TRIGGERS','mouse_device','None')
         config.set('TRIGGERS','low_temp','21')
-        config.set('TRIGGERS','lockedtriggers','E_DEVICE,E_NETCABLE,E_CHASSIS_MOTION,E_ROOM_MOTION,E_NET_CABLE_IN,E_NET_CABLE_OUT,E_KILL_SWITCH_2')
+        config.set('TRIGGERS','lockedtriggers','E_DEVICE,E_BLUETOOTH,E_NETCABLE,E_CHASSIS_MOTION,E_ROOM_MOTION,E_NET_CABLE_IN,E_NET_CABLE_OUT,E_KILL_SWITCH_2')
         config.set('TRIGGERS','alwaystriggers','E_KILL_SWITCH_1')
         config.set('TRIGGERS','dismount_tc','False')
         config.set('TRIGGERS','dismount_dm','False')

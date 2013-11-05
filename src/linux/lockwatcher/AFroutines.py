@@ -19,13 +19,13 @@ def lockProcess():
     lockProgram = fileconfig.LOCKCMD
     
     try:
-        if lockProgram != None: subprocess.call(lockProgram.split(' '),shell=True)
+        if lockProgram != None: subprocess.call(lockProgram.split(' '))
     except: pass
     
     if fileconfig.DESK_UID != None: os.setuid(fileconfig.DESK_UID)
     
     try:
-        if lockProgram != None: subprocess.call(lockProgram.split(' '),shell=True)
+        if lockProgram != None: subprocess.call(lockProgram.split(' '))
     except: pass
     
     try:
@@ -138,5 +138,5 @@ def emergency(device=None):
             thread.run(timeout=timeLimit)
     except: pass        
     
-    #subprocess.call(['/sbin/poweroff','-f'])
+    subprocess.call(['/sbin/poweroff','-f'])
     

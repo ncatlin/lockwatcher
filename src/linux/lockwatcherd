@@ -33,7 +33,7 @@ from lockwatcher import fileconfig
 from lockwatcher import daemon
 
 try:
-    import sensors #bastien leonards pysensors
+    import sensors
     GOTSENSORS = True
 except:
     GOTSENSORS = False
@@ -52,7 +52,7 @@ def eventHandle(event_type,eventReason):
     if (event_type in alwaysTriggers) or (event_type in lockedTriggers and locked == True):
         eventQueue.put(("log","[%s - Trigger %s ACTIVATED]: %s"%(lockedStateText[locked],event_type,eventReason)))
         if testMode == 'False':
-            if time.time() < startupTime + 10:#90:
+            if time.time() < startupTime + 90:
                 eventQueue.put(("log",'Shutdown cancelled - Not allowed within 90 seconds of lockwatcher start'))
             else:
                 eventQueue.put(("kill",event_type,eventReason))
@@ -327,7 +327,7 @@ class netcableMonitor(threading.Thread):
             if not os.access(ifplugstatus,os.X_OK):
                 ifplugstatus = '/usr/bin/ifplugstatus'
                 if not os.access(ifplugstatus,os.X_OK):
-                    eventQueue.put(('log','netcableMonitor failed: Cannot find ifplugstatus. Install ifplugd.'))
+                    eventQueue.put(('log','netcableMonitor failed: Cannot find ifplugstatus. Install the ifplugd package.'))
                     eventQueue.put(('status','netadapters',"Error: ifplugstatus not available"))
                     return
             
@@ -380,7 +380,7 @@ class temperatureMonitor(threading.Thread):
             eventQueue.put(('status','temperature',"Error: No pysensors"))
             return
         
-        
+        sensors.init()
         for chip in sensors.iter_detected_chips():
             if "acpi" in str(chip): break
         else:
@@ -392,7 +392,7 @@ class temperatureMonitor(threading.Thread):
         self.chip = chip
             
         for feature in chip:
-            if 'MB Temperature' in str(feature): break
+            if 'MB Temperature' in feature.label: break
         else:
             eventQueue.put(('log',"Could not read temperature from acpi bus: Temperature monitoring disabled"))
             eventQueue.put(('status','temperature',"Error: Could not read temperature from ACPI"))
@@ -485,16 +485,15 @@ class bluetoothMon(threading.Thread):
         
         #if someone needs it then the ability to choose port is there
         if fileconfig.config.has_option('TRIGGERS', 'BLUETOOTH_PORT'):
-            bluetoothPort = fileconfig.config.get('TRIGGERS','BLUETOOTH_PORT')
+            bluetoothPort = int(fileconfig.config.get('TRIGGERS','BLUETOOTH_PORT'))
         else: bluetoothPort = 2
         
         try:
             eventQueue.put(('status','bluetooth',"Connecting..."))
             self.s = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
-            #self.s.settimeout(45)
-            self.s.connect((self.deviceID,2))
+            self.s.connect((BTDevID,2))
         except:
-            eventQueue.put(('log',"Error: Bluetooth connection to %s unavailable or unauthorised"%BTDevID))
+            eventQueue.put(('log',"Error: Bluetooth connection to %s unavailable or unauthorised: %s"%(BTDevID,sys.exc_info())))
             eventQueue.put(('status','bluetooth',"Error: Connection Failed"))
             return
         
@@ -532,7 +531,6 @@ class bluetoothMon(threading.Thread):
                 reconnected = False
                 while reconnected == False:
                     self.s = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
-                    self.s.settimeout(20)
                     try:
                         eventQueue.put(('status','bluetooth',"Connecting..."))
                         self.s.connect((fileconfig.config.get('TRIGGERS','BLUETOOTH_DEVICE_ID'),bluetoothPort))
@@ -1181,8 +1179,6 @@ class lockwatcher(threading.Thread):
         if 'E_KILL_SWITCH_1' in activeTriggers or 'E_KILL_SWITCH_2' in activeTriggers:
             startMonitor(threadDict,'killSwitch')
         
-        #run the chassis camera if set to trigger anytime
-        #what? why not have this as always. todo
         if fileconfig.config.has_option('TRIGGERS', 'CHASSIS_LOCK_NONSTOP') and \
             fileconfig.config.get('TRIGGERS','CHASSIS_LOCK_NONSTOP') == 'True':
                 CHASSIS_NONSTOP = True

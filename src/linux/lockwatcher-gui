@@ -724,8 +724,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
            
@@ -819,14 +819,14 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
         
         if hardwareconfig.GOTSENSORS == False:
             Label(parent,text="Availability/support for RAM temperature sensors is poor.\n"+
-                            "The pysensors module and/or libsensors is not installed so you\n"+
+                            "The PySensors module and/or libsensors is not installed so you\n"+
                             "don't get motherboard temperature monitoring either.\n"+
                             "Setup a chassis motion camera for protection against internal hardware attacks."
                             ,background='red').pack()    
@@ -864,8 +864,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack(side=RIGHT)
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
         
@@ -1004,8 +1004,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
         
@@ -1097,8 +1097,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
         
@@ -1203,8 +1203,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
         
@@ -1230,8 +1230,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
         
@@ -1383,8 +1383,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
         
@@ -1417,8 +1417,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', fileconfig.tktrigStateChange)
         
