@@ -63,7 +63,7 @@ Install it, configure your cameras (covered later).
 * Run the installer
 * Configure it
 
-You will need to restart the computer before mouse/keyboard triggers work.
+You will need to restart the computer before mouse/keyboard triggers work (and they don't work at all on Windows 8).
 
 If you have Crucial Ballistix modules you may want to install and run their MOD utility and start temperature logging
 
