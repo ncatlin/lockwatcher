@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python
 '''
 lockwatcher.py
 @author: Nia Catlin
@@ -10,9 +10,13 @@ Requires 'motion' and 'ifplugd' to be running and properly configured
 to use the motion and network connection triggers
 '''
 
+#python 2 specific modules
+import Queue, bluetooth
+
+
 import os, sys
 import syslog, time, datetime
-import threading, queue, struct
+import threading, struct
 import subprocess,multiprocessing
 import socket, select
 import pyudev 
@@ -34,21 +38,21 @@ try:
 except:
     GOTSENSORS = False
 
-DAEMONPORT = int(fileconfig.config['TRIGGERS']['daemonport'])
-eventQueue = queue.Queue()
+DAEMONPORT = int(fileconfig.config.get('TRIGGERS','daemonport'))
+eventQueue = Queue.Queue()
 startupTime = None
 
 lockedStateText = {True:'Locked',False:'Not Locked'}
 def eventHandle(event_type,eventReason):
     locked = hardwareconfig.checkLock()
-    alwaysTriggers = fileconfig.config['TRIGGERS']['ALWAYSTRIGGERS'].split(',')
-    lockedTriggers = fileconfig.config['TRIGGERS']['LOCKEDTRIGGERS'].split(',')
-    testMode = fileconfig.config['TRIGGERS']['TEST_MODE']
+    alwaysTriggers = fileconfig.config.get('TRIGGERS','ALWAYSTRIGGERS').split(',')
+    lockedTriggers = fileconfig.config.get('TRIGGERS','LOCKEDTRIGGERS').split(',')
+    testMode = fileconfig.config.get('TRIGGERS','TEST_MODE')
     
     if (event_type in alwaysTriggers) or (event_type in lockedTriggers and locked == True):
         eventQueue.put(("log","[%s - Trigger %s ACTIVATED]: %s"%(lockedStateText[locked],event_type,eventReason)))
         if testMode == 'False':
-            if time.time() < startupTime + 90:
+            if time.time() < startupTime + 10:#90:
                 eventQueue.put(("log",'Shutdown cancelled - Not allowed within 90 seconds of lockwatcher start'))
             else:
                 eventQueue.put(("kill",event_type,eventReason))
@@ -312,11 +316,11 @@ class netcableMonitor(threading.Thread):
             eventQueue.put(('status','netadapters',"Loading Config..."))
             
             monitorUpAdapters = {}
-            for iface in fileconfig.config['TRIGGERS']['adapterconids'].split(','):
+            for iface in fileconfig.config.get('TRIGGERS','adapterconids').split(','):
                 monitorUpAdapters[iface] = None
             
             monitorDownAdapters = {}
-            for iface in fileconfig.config['TRIGGERS']['adapterdisconids'].split(','):
+            for iface in fileconfig.config.get('TRIGGERS','adapterdisconids').split(','):
                 monitorDownAdapters[iface] = None
             
             ifplugstatus = '/usr/sbin/ifplugstatus'
@@ -370,13 +374,13 @@ class temperatureMonitor(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.name = "TempMonThread"
-        
+        self.running = False
         if GOTSENSORS == False:
             eventQueue.put(('log',"No pysensors module installed. Could not monitor motherboard temperature."))
             eventQueue.put(('status','temperature',"Error: No pysensors"))
             return
         
-        self.running = False
+        
         for chip in sensors.get_detected_chips():
             if "acpi" in str(chip): break
         else:
@@ -410,7 +414,7 @@ class temperatureMonitor(threading.Thread):
         while self.running == True:
             time.sleep(1)
             newTemp = self.chip.get_value(self.subfeature.number)
-            if newTemp < fileconfig.config['TRIGGERS']['LOW_TEMP']: 
+            if newTemp < fileconfig.config.get('TRIGGERS','LOW_TEMP'): 
                 eventHandle('E_TEMPERATURE',"%s degrees C"%newTemp)
                 
         eventQueue.put(('status','temperature',"Not Started"))         
@@ -479,7 +483,7 @@ class bluetoothMon(threading.Thread):
     def run(self):
         currentlyActive = False
         
-        BTDevID = fileconfig.config['TRIGGERS']['BLUETOOTH_DEVICE_ID']
+        BTDevID = fileconfig.config.get('TRIGGERS','BLUETOOTH_DEVICE_ID')
         if BTDevID == '':
             eventQueue.put(('log',"Error: Bluetooth device not configured"))
             eventQueue.put(('status','bluetooth',"Error: Device not configured"))
@@ -487,14 +491,14 @@ class bluetoothMon(threading.Thread):
         
         #if someone needs it then the ability to choose port is there
         if fileconfig.config.has_option('TRIGGERS', 'BLUETOOTH_PORT'):
-            bluetoothPort = fileconfig.config['TRIGGERS']['BLUETOOTH_PORT']
+            bluetoothPort = fileconfig.config.get('TRIGGERS','BLUETOOTH_PORT')
         else: bluetoothPort = 2
         
         try:
-            self.s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
-            self.s.settimeout(50)
             eventQueue.put(('status','bluetooth',"Connecting..."))
-            self.s.connect((BTDevID,bluetoothPort))
+            self.s = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+            #self.s.settimeout(45)
+            self.s.connect((self.deviceID,2))
         except:
             eventQueue.put(('log',"Error: Bluetooth connection to %s unavailable or unauthorised"%BTDevID))
             eventQueue.put(('status','bluetooth',"Error: Connection Failed"))
@@ -517,7 +521,7 @@ class bluetoothMon(threading.Thread):
                 continue
             
             try:
-                self.s.settimeout(10)
+                #self.s.settimeout(10)
                 self.s.recv(1024)
             except:
                 eventQueue.put(('log',"Bad connection to bluetooth device"))
@@ -533,11 +537,11 @@ class bluetoothMon(threading.Thread):
                 self.s.close()
                 reconnected = False
                 while reconnected == False:
-                    self.s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
+                    self.s = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
                     self.s.settimeout(20)
                     try:
                         eventQueue.put(('status','bluetooth',"Connecting..."))
-                        self.s.connect((fileconfig.config['TRIGGERS']['BLUETOOTH_DEVICE_ID'],bluetoothPort))
+                        self.s.connect((fileconfig.config.get('TRIGGERS','BLUETOOTH_DEVICE_ID'),bluetoothPort))
                         reconnected = True
                     except:
                         eventQueue.put(('status','bluetooth',"Error: Reconnect Failed"))
@@ -553,8 +557,8 @@ class bluetoothMon(threading.Thread):
         self.s.close()
 
 def setupIMAP(config):
-    server = imapclient.IMAPClient(config['EMAIL']['EMAIL_IMAP_HOST'], use_uid=False, ssl=True)
-    server.login(config['EMAIL']['EMAIL_USERNAME'], fileconfig.config['EMAIL']['EMAIL_PASSWORD'])
+    server = imapclient.IMAPClient(config.get('EMAIL','EMAIL_IMAP_HOST'), use_uid=False, ssl=True)
+    server.login(config.get('EMAIL','EMAIL_USERNAME'), config.get('EMAIL','EMAIL_PASSWORD'))
     server.select_folder('INBOX')
     eventQueue.put(('log',"Established IMAP connection"))
     return server
@@ -647,11 +651,11 @@ class emailMonitor(threading.Thread):
                 try:
                     keys = keys[seqid]['ENVELOPE']
                     addressee = keys[2][0][2]
-                    intendedAddressee = fileconfig.config['EMAIL']['command_email_address'].split('@')[0]
+                    intendedAddressee = fileconfig.config.get('EMAIL','command_email_address').split('@')[0]
                     if addressee == intendedAddressee:
                         eventQueue.put(("mail",keys[1]))
                     else:
-                        ourAddress = fileconfig.config['EMAIL']['sender_email_address'].split('@')[0]
+                        ourAddress = fileconfig.config.get('EMAIL','sender_email_address').split('@')[0]
                         if addressee != ourAddress:
                             eventQueue.put(('log',"Got an email with unknown addressee: %s (need addressee %s)"%
                                             (addressee,intendedAddressee)))
@@ -678,7 +682,7 @@ class keyboardMonitor(threading.Thread):
         self.pollobject = None
         self.running = False
         
-        kbd_device = fileconfig.config['TRIGGERS']['KEYBOARD_DEVICE']
+        kbd_device = fileconfig.config.get('TRIGGERS','KEYBOARD_DEVICE')
         if kbd_device == 'None' or not os.path.exists(kbd_device):
             kbd_device = hardwareconfig.getKBDDevice()
             if kbd_device == None:
@@ -701,7 +705,7 @@ class keyboardMonitor(threading.Thread):
             
             triggerKeys1 = {}
             if 'E_KILL_SWITCH_1' in fileconfig.getActiveTriggers():
-                triggerCombo = fileconfig.config['TRIGGERS']['kbd_kill_combo_1'].split('+')
+                triggerCombo = fileconfig.config.get('TRIGGERS','kbd_kill_combo_1').split('+')
                 watchKeys.extend(triggerCombo)
                 if len(triggerCombo) == 0: 
                         eventQueue.put(('log',"No trigger key combination provided: keyboard killswitch 1 inactive"))
@@ -711,7 +715,7 @@ class keyboardMonitor(threading.Thread):
                             
             triggerKeys2 = {}   
             if 'E_KILL_SWITCH_2' in fileconfig.getActiveTriggers():
-                triggerCombo = fileconfig.config['TRIGGERS']['kbd_kill_combo_2'].split('+')
+                triggerCombo = fileconfig.config.get('TRIGGERS','kbd_kill_combo_2').split('+')
                 watchKeys.extend(triggerCombo)
                 if len(triggerCombo) == 0: 
                         eventQueue.put(('log',"No trigger key combination provided: keyboard killswitch 2 inactive"))  
@@ -888,7 +892,7 @@ class camera_monitor(threading.Thread):
             return 
             
         args = [motionPath,"-v%s"%self.device,"-t %s"%threshold,"-m %s"%minframes,"-f %s"%fps]
-        savePath = fileconfig.config['CAMERAS']['image_path']
+        savePath = fileconfig.config.get('CAMERAS','image_path')
         if savepic == True: args.append("-j %s"%savePath)
         
         try:
@@ -916,10 +920,10 @@ class camera_monitor(threading.Thread):
                 return
 
             if output[0] == 'motion':
-                if self.event == 'E_CHASSIS_MOTION' or fileconfig.config['CAMERAS']['room_savepicture'] == 'False':
+                if self.event == 'E_CHASSIS_MOTION' or fileconfig.config.get('CAMERAS','room_savepicture') == 'False':
                     eventHandle(self.event,('Motion detected'))
             elif output[0] == 'path': #a new image capture
-                if self.event == 'E_ROOM_MOTION' and fileconfig.config['CAMERAS']['room_savepicture'] == 'True':
+                if self.event == 'E_ROOM_MOTION' and fileconfig.config.get('CAMERAS','room_savepicture') == 'True':
                     eventHandle(self.event,('Motion capture generated',output[1]))  
             elif output[0] == '':
                 continue
@@ -1008,7 +1012,7 @@ def startMonitor(threadDict,monitor):
         return True
     
     elif monitor == 'chassis_camera':
-        deviceName = fileconfig.config['CAMERAS']['cam_chassis']
+        deviceName = fileconfig.config.get('CAMERAS','cam_chassis')
         cameraDetails = hardwareconfig.getCamNames()
         for dev in cameraDetails:
             if cameraDetails[dev]['ID_MODEL'] == deviceName:
@@ -1021,9 +1025,9 @@ def startMonitor(threadDict,monitor):
             
         
         settings = {
-        'threshold' : fileconfig.config['CAMERAS']['chassis_threshold'],
-        'minframes' : fileconfig.config['CAMERAS']['chassis_minframes'],
-        'fps' : fileconfig.config['CAMERAS']['chassis_fps'],
+        'threshold' : fileconfig.config.get('CAMERAS','chassis_threshold'),
+        'minframes' : fileconfig.config.get('CAMERAS','chassis_minframes'),
+        'fps' : fileconfig.config.get('CAMERAS','chassis_fps'),
         'savepic' : False
         }
         
@@ -1035,7 +1039,7 @@ def startMonitor(threadDict,monitor):
     
     elif monitor == 'room_camera':
         
-        deviceName = fileconfig.config['CAMERAS']['cam_room']
+        deviceName = fileconfig.config.get('CAMERAS','cam_room')
         cameraDetails = hardwareconfig.getCamNames()
         for dev in cameraDetails:
             if cameraDetails[dev]['ID_MODEL'] == deviceName:
@@ -1047,11 +1051,11 @@ def startMonitor(threadDict,monitor):
             return False
         
         settings = {
-        'threshold' : fileconfig.config['CAMERAS']['room_threshold'],
-        'minframes' : fileconfig.config['CAMERAS']['room_minframes'],
-        'fps' : fileconfig.config['CAMERAS']['room_fps'],
+        'threshold' : fileconfig.config.get('CAMERAS','room_threshold'),
+        'minframes' : fileconfig.config.get('CAMERAS','room_minframes'),
+        'fps' : fileconfig.config.get('CAMERAS','room_fps'),
         }
-        if fileconfig.config['CAMERAS']['room_savepicture'] == 'True':
+        if fileconfig.config.get('CAMERAS','room_savepicture') == 'True':
             settings['savepic'] = True
         else: settings['savepic'] = False
         
@@ -1096,7 +1100,7 @@ def startMonitor(threadDict,monitor):
 #send msg to each connection in listeners
 def broadcast(listeners,msg):
     badConnections = []
-    msg = msg+'@'#message separator
+    msg = msg+'@@'#message separator
 
     for connection in listeners:
         try:
@@ -1110,7 +1114,7 @@ def broadcast(listeners,msg):
 #add msg to log file (or syslog if it isnt usable) + send to all listeners
 def addLogEntry(msg,listeners=None):
     entry = time.strftime('[%x %X] ')+msg+'\n'
-    logPath = fileconfig.config['TRIGGERS']['logfile']
+    logPath = fileconfig.config.get('TRIGGERS','logfile')
     try:
         fd = open(logPath,'a+')
         fd.write(entry) 
@@ -1143,9 +1147,11 @@ class lockwatcher(threading.Thread):
     def run(self):
         while self.running == True:
             lastStarted = time.time()
-            try:
-                self.mainloop()
-            except:
+            #try:
+            self.mainloop()
+            #except:
+            '''
+                print('mainloop exception %s'%str(sys.exc_info()))
                 addLogEntry('Lockwatcher died with exception: %s. Restarting'%str(sys.exc_info()))
                 
                 for threadName,thread in self.threadDict.items():
@@ -1162,7 +1168,7 @@ class lockwatcher(threading.Thread):
                 
                 lastStarted = time.time()
                 time.sleep(1)
-            
+            '''    
     def mainloop(self):
         addLogEntry('Initialising lockwatcher')
         global startupTime 
@@ -1182,22 +1188,23 @@ class lockwatcher(threading.Thread):
             startMonitor(threadDict,'killSwitch')
         
         #run the chassis camera if set to trigger anytime
+        #what? why not have this as always. todo
         if fileconfig.config.has_option('TRIGGERS', 'CHASSIS_LOCK_NONSTOP') and \
-            fileconfig['TRIGGERS']['CHASSIS_LOCK_NONSTOP'] == 'True':
+            fileconfig.config.get('TRIGGERS','CHASSIS_LOCK_NONSTOP') == 'True':
                 CHASSIS_NONSTOP = True
         else: CHASSIS_NONSTOP = False
         
-        if 'E_CHASSIS_MOTION' in fileconfig.config['TRIGGERS']['alwaystriggers']:
+        if 'E_CHASSIS_MOTION' in fileconfig.config.get('TRIGGERS','alwaystriggers'):
             startMonitor(threadDict,'chassis_camera')
         #run it if set to monitor all the time, even if it only triggers when locked
-        elif 'E_CHASSIS_MOTION' in fileconfig.config['TRIGGERS']['lockedtriggers'] and CHASSIS_NONSTOP == True:
+        elif 'E_CHASSIS_MOTION' in fileconfig.config.get('TRIGGERS','lockedtriggers') and CHASSIS_NONSTOP == True:
             startMonitor(threadDict,'chassis_camera')
             
         if 'E_BLUETOOTH 'in activeTriggers:
             startMonitor(threadDict,'bluetooth')
 
         badCommands = 0
-        if fileconfig.config['EMAIL']['enable_remote']=='True':
+        if fileconfig.config.get('EMAIL','enable_remote')=='True':
             startMonitor(threadDict,'email')
 
         #monitor for device change events from the kernel
@@ -1209,11 +1216,11 @@ class lockwatcher(threading.Thread):
             startMonitor(threadDict,'temperature') 
         
         ''' not tested yet - probably based on a flawed premise
-        if 'E_INTRUSION' in fileconfig.config['TRIGGERS']['alwaystriggers']: 
+        if 'E_INTRUSION' in fileconfig.config.get('TRIGGERS','alwaystriggers'): 
             startMonitor(threadDict,'intrusion') 
         '''
             
-        logPath = fileconfig.config['TRIGGERS']['logfile']
+        logPath = fileconfig.config.get('TRIGGERS','logfile')
         if os.path.exists(logPath):
             creationTime = time.ctime(os.path.getctime(logPath))
             creationMonth = datetime.datetime.strptime(creationTime, "%a %b %d %H:%M:%S %Y")
@@ -1243,10 +1250,10 @@ class lockwatcher(threading.Thread):
                     #shutdownActivated = True
                     addLogEntry('Emergency shutdown triggered: %s'%str(eventDetails),listeners)
                     
-                    if fileconfig.config['EMAIL']['email_alert'] == 'True':
+                    if fileconfig.config.get('EMAIL','email_alert') == 'True':
                         emailResult = True
                         if eventTrigger == 'E_ROOM_MOTION' and \
-                            eventDetails[0] == 'Motion capture generated' and fileconfig.config['EMAIL']['EMAIL_MOTION_PICTURE'] == 'True':
+                            eventDetails[0] == 'Motion capture generated' and fileconfig.config.get('EMAIL','EMAIL_MOTION_PICTURE') == 'True':
                                     picPath = eventDetails[1]
                                     if os.path.exists(picPath):
                                         emailResult = sendemail.sendEmail("Emergency shutdown + Image",str(eventDetails),
@@ -1270,24 +1277,24 @@ class lockwatcher(threading.Thread):
                 lockState = event[1]
                 hardwareconfig.setLock(lockState)
                 
+                lockedTriggers = fileconfig.config.get('TRIGGERS','lockedtriggers')
+                alwaysTriggers = fileconfig.config.get('TRIGGERS','alwaystriggers')
+                
                 if lockState == True:
-                    if 'E_CHASSIS_MOTION' in fileconfig.config['TRIGGERS']['lockedtriggers'] and \
+                    if 'E_CHASSIS_MOTION' in lockedTriggers and \
                     not isRunning('chassis_camera',threadDict):
                         startMonitor(threadDict,'chassis_camera')
                     
-                    if 'E_MOUSE_MV' in fileconfig.config['TRIGGERS']['lockedtriggers'] or \
-                    'E_MOUSE_BTN' in fileconfig.config['TRIGGERS']['lockedtriggers'] and \
-                    not isRunning('mouse',threadDict):  
+                    if ('E_MOUSE_MV' in lockedTriggers or 'E_MOUSE_BTN' in lockedTriggers) and not isRunning('mouse',threadDict):  
                         startMonitor(threadDict,'mouse')
                         
                 elif lockState == False:
-                    if 'E_CHASSIS_MOTION' in fileconfig.config['TRIGGERS']['lockedtriggers'] and \
+                    if 'E_CHASSIS_MOTION' in lockedTriggers and \
                         isRunning('chassis_camera',threadDict) and CHASSIS_NONSTOP == False:
                         threadDict['chassis_camera'].stop()
                         threadDict['chassis_camera'] = None
                     
-                    if 'E_MOUSE_MV' not in fileconfig.config['TRIGGERS']['alwaystriggers'] and \
-                       'E_MOUSE_BTN' not in fileconfig.config['TRIGGERS']['alwaystriggers'] and \
+                    if 'E_MOUSE_MV' not in alwaysTriggers and 'E_MOUSE_BTN' not in alwaysTriggers and \
                        isRunning('mouse',threadDict):
                         threadDict['mouse'].stop()
                         threadDict['mouse'] = None  
@@ -1343,7 +1350,7 @@ class lockwatcher(threading.Thread):
                     except:
                         continue
                     
-                secret = fileconfig.config['EMAIL']['email_secret']
+                secret = fileconfig.config.get('EMAIL','email_secret')
                 if validMail == True and sendemail.validHMAC(code,command,secret) == True:
                     executeRemoteCommand(command, threadDict) 
                     badCommands = 0 #good command resets limit
@@ -1351,7 +1358,7 @@ class lockwatcher(threading.Thread):
                     badCommands += 1
                     sendemail.sendEmail("Command failed","Bad command or authentication code received: %s"%str(event[1]),fileconfig.config)
                     eventQueue.put(('log','Mail not authenticated or bad command: "%s". Ensure clocks are synchronised.'%str(event[1])))
-                    badCommandLimit = int(fileconfig.config['EMAIL']['BAD_COMMAND_LIMIT'])
+                    badCommandLimit = int(fileconfig.config.get('EMAIL','BAD_COMMAND_LIMIT'))
                     if badCommandLimit > 0 and badCommands >= badCommandLimit:
                         addLogEntry(str(event[1]),listeners)
                         
@@ -1366,7 +1373,7 @@ class lockwatcher(threading.Thread):
                 monitor = event[1]
                 if not isRunning(monitor,threadDict):
                     startMonitor(threadDict,monitor)
-                else: eventQueue.put(('log','Error starting thread %s: Already running '%monitor))
+                else: eventQueue.put(('log','Error starting "%s" thread: Already running '%monitor))
             
             #config program wants a monitor stopped    
             elif eventType == 'stopMonitor':    
@@ -1375,7 +1382,7 @@ class lockwatcher(threading.Thread):
                     threadDict[monitor].stop()
                     if monitor == 'devices': eventQueue.put(('status','devices',"Not Started"))
                 else: 
-                    eventQueue.put(('log','Failed to stop thread %s: Not Started '%monitor))
+                    eventQueue.put(('log','Failed to stop "%s" thread: Not Started '%monitor))
             
             #thread has a new status      
             elif eventType == 'Status':
@@ -1413,7 +1420,7 @@ class lockwatcher(threading.Thread):
                     continue
                 
                 eventQueue.put(('log','Lockwatcher connected to new configuration client'))
-                s.send(b'True@')
+                s.send(b'True@@')
                 listeners.append(s)      
                   
             else:

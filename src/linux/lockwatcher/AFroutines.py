@@ -59,13 +59,13 @@ TCUSED = False
 DMUSED = True
 #dismount encrypted containers    
 def unmountEncrypted():
-    if fileconfig.config['TRIGGERS']['dismount_tc'] == 'True':
+    if fileconfig.config.get('TRIGGERS','dismount_tc') == 'True':
         #doesnt seem to have purge or wipecache options on linux
-        tcPath = fileconfig.config['TRIGGERS']['tc_path']
+        tcPath = fileconfig.config.get('TRIGGERS','tc_path')
         if os.path.exists(tcPath):
             subprocess.call([tcPath,"--dismount","--force"], shell=True, timeout=2)
     
-    if fileconfig.config['TRIGGERS']['dismount_dm'] == 'True':
+    if fileconfig.config.get('TRIGGERS','dismount_dm') == 'True':
         devlist = os.listdir('/dev/mapper')
         for dev in devlist:
             if 'crypt' in dev: #can parallelise this a bit
@@ -132,11 +132,11 @@ def emergency(device=None):
     except: pass
     
     try:
-        if config['TRIGGERS']['exec_shellscript'] == 'True':
-            timeLimit = float(fileconfig.config['TRIGGERS']['script_timeout'])
+        if config.get('TRIGGERS','exec_shellscript') == 'True':
+            timeLimit = float(fileconfig.config.get('TRIGGERS','script_timeout'))
             thread = execScript('/etc/lockwatcher/sd.sh')
             thread.run(timeout=timeLimit)
     except: pass        
     
-    subprocess.call(['/sbin/poweroff','-f'])
+    #subprocess.call(['/sbin/poweroff','-f'])
     

@@ -42,6 +42,10 @@ def getMouseDevices():
         devices.append('/dev/input/'+event)
     return devices
 
+#ttk combobox doesn't like non-ascii
+def removeNonAscii(s):
+        return "".join(filter(lambda x: ord(x)<128, s))
+    
 #gets the /dev/videoX strings and device/manufacturer names for all the cameras
 #returns them in a dict
 #had to change from popen->communicate to check_output because debian is still on py 3.2
@@ -57,10 +61,10 @@ def getCamNames():
         
         for detail in output.decode('UTF-8').split('\n'):
             if 'ID_MODEL=' in detail:
-                cameranames[dev]['ID_MODEL'] = detail.split('=')[1]
+                cameranames[dev]['ID_MODEL'] = removeNonAscii(detail.split('=')[1])
                 continue
             if 'ID_VENDOR=' in detail:
-                cameranames[dev]['ID_VENDOR'] = detail.split('=')[1]
+                cameranames[dev]['ID_VENDOR'] = removeNonAscii(detail.split('=')[1])
                 continue
             
     return cameranames
@@ -120,7 +124,7 @@ class temperatureMonitor(threading.Thread):
         self.die = True
 
 
-
+import bluetooth
 class BTTestThread(threading.Thread):
     def __init__(self,callback,deviceID):
         threading.Thread.__init__(self) 
@@ -130,22 +134,25 @@ class BTTestThread(threading.Thread):
         self.socket = None
         self.die = False
     def run(self):
+        if not bluetooth.is_valid_address(self.deviceID): return False
+        
         try:
-            self.socket = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
-            self.socket.settimeout(45)
-            #sometimes this 'connects' to and returns a socket for devices that are not turned on
-            #might just be a problem with testing it on a vm?
+            self.socket = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+            #self.socket.settimeout(45)
             self.socket.connect((self.deviceID,2))
-            
-        except ConnectionRefusedError:
+               
+        except bluetooth.btcommon.BluetoothError as e:
             if self.die == True: return #test cancelled
-            self.callback("Status: Connection refused")
-            return False
-        except OSError:
-            if self.die == True: return #test cancelled
-            self.callback("Status: Not Found")
+            errorno = e.message.strip('()').split(',')[0]
+            if errorno == '113': 
+                self.callback("Bluetooth Unavailable")
+            elif errorno == '115':
+                self.callback("Status: Cannot Connect")
+            else:
+                self.callback(e.message)
             return False
         except:
+            print(sys.exc_info())
             if self.die == True: return #test cancelled
             self.callback("Status: Unavailable/Unauthorised")
             return False
@@ -184,25 +191,40 @@ class BTScanThread(threading.Thread):
         self.callback = callback
         self.name='BTScanThread'
     def run(self):
+        results = bluetooth.discover_devices(10,True,True)
         
-        try:
-            scanprocess = subprocess.Popen(['hcitool','scan'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-        except subprocess.CalledProcessError as e:
-            self.callback("Could not execute hcitool: %s"+str(e))
-            return None
-        
-        if scanprocess == []:
-            self.callback("Bluetooth does not appear to be enabled: skipping")
-            return None
-        try:
-            out, err = scanprocess.communicate()
-        except:
-            scanprocess.kill()
-            out, err = str(sys.exc_info())
+        if results != []: 
+            self.callback(results,False)
+            return
+        else:
+            #no results? try hciscantool because it often works when discover_devices doesn't
+            try:
+                scanprocess = subprocess.Popen(['hcitool','scan'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            except subprocess.CalledProcessError as e:
+                self.callback("Could not execute hcitool: %s"+str(e),True)
+                return None
             
-        self.callback(out,err)
-        return None
-
+            if scanprocess == []:
+                self.callback("Bluetooth does not appear to be enabled: skipping",True)
+                return None
+            try:
+                out, err = scanprocess.communicate()
+                err = False
+            except:
+                scanprocess.kill()
+                out = str(sys.exc_info())
+                err = True
+            
+            devList = []
+            for line in out.split('\n'):
+                if line in ['Scanning ...','']: continue
+                dev = line.lstrip('\t').split('\t')
+                if len(dev) == 2:
+                    devList.append((dev[0],dev[1]))
+                else:
+                    devList.append((dev[0]))
+            
+            self.callback(devList,err)
 
             
 #tries to connect to the email servers listed with the given credentials    
@@ -213,37 +235,41 @@ class emailTestThread(threading.Thread):
         self.config = config
         self.name='mailTestThread'
     def run(self):
-        if self.config['EMAIL']['EMAIL_SMTP_HOST']!= None:
+        host = self.config.get('EMAIL','EMAIL_SMTP_HOST')
+        if host != '':
             try:
-                s = smtplib.SMTP(self.config['EMAIL']['EMAIL_SMTP_HOST'], timeout=10)
+                s = smtplib.SMTP(host, timeout=10)
                 s.ehlo()
                 s.starttls()
-                s.login(self.config['EMAIL']['EMAIL_USERNAME'], self.config['EMAIL']['EMAIL_PASSWORD'])
+                s.login(self.config.get('EMAIL','EMAIL_USERNAME'), self.config.get('EMAIL','EMAIL_PASSWORD'))
                 s.quit()
             except smtplib.SMTPAuthenticationError:
                 resultS = 'Authentication Error'
             except socket.timeout:
                 resultS = 'Connection Timeout'
+            except socket.gaierror:
+                resultS = 'Connection Failed %s'%str(sys.exc_info())
             except:
-                resultS = 'Connection to %s failed'%self.config['EMAIL']['EMAIL_SMTP_HOST']
+                resultS = 'Connection failed: %s'%sys.exc_info()[0]
             else:
                 resultS = 'OK'
-            
-        if self.config['EMAIL']['EMAIL_IMAP_HOST']!= None:    
+        
+        host = self.config.get('EMAIL','EMAIL_IMAP_HOST')
+        if host != '':    
             try:
-                server = imapclient.IMAPClient(self.config['EMAIL']['EMAIL_IMAP_HOST'], use_uid=False, ssl=True)
-                server.login(self.config['EMAIL']['EMAIL_USERNAME'], self.config['EMAIL']['EMAIL_PASSWORD'])
+                server = imapclient.IMAPClient(host, use_uid=False, ssl=True)
+                server.login(self.config.get('EMAIL','EMAIL_USERNAME'), self.config.get('EMAIL','EMAIL_PASSWORD'))
                 server.select_folder('INBOX')
                 server.logout()
                 resultI = "OK"
-            except FileNotFoundError:
-                resultI = 'Connection to %s failed'%self.config['EMAIL']['EMAIL_IMAP_HOST']
             except socket.gaierror:
-                resultI = 'Connection Failed: gaierror'
+                resultI = 'Connection Failed'
             except socket.timeout:
                 resultI = 'Connection Timeout'
             except imapclient.IMAPClient.Error as e:
                 resultI = e.args[0].decode('utf-8')
+            except:
+                resultI = str(sys.exc_info())
             
         self.callback('IMAP: '+resultI,'SMTP: '+resultS)
         return None

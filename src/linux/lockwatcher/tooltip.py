@@ -1,6 +1,6 @@
 #http://www.voidspace.org.uk/python/weblog/arch_d7_2006_07_01.shtml#e387
 
-from tkinter import *
+from Tkinter import *
 
 class ToolTip(object):
 

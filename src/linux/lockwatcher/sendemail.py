@@ -33,10 +33,10 @@ def validHMAC(code,command, secretStr):
 
 def doSend(msg,config):
     try:
-        s = smtplib.SMTP(config['EMAIL']['EMAIL_SMTP_HOST'])
+        s = smtplib.SMTP(config.get('EMAIL','EMAIL_SMTP_HOST'))
         s.ehlo()
         s.starttls()
-        s.login(config['EMAIL']['EMAIL_USERNAME'], config['EMAIL']['EMAIL_PASSWORD'])
+        s.login(config.get('EMAIL','EMAIL_USERNAME'), config.get('EMAIL','EMAIL_PASSWORD'))
         s.sendmail(msg['From'], msg['To'],msg.as_string())  
         s.quit()
     
@@ -67,8 +67,8 @@ def sendEmail(subject,message,config,attachment=None):
         msg.attach(part)
         
     msg['Subject'] = subject
-    msg['From'] = config['EMAIL']['SENDER_EMAIL_ADDRESS']
-    msg['To'] = config['EMAIL']['ALERT_EMAIL_ADDRESS']
+    msg['From'] = config.get('EMAIL','SENDER_EMAIL_ADDRESS')
+    msg['To'] = config.get('EMAIL','ALERT_EMAIL_ADDRESS')
     
     result = doSend(msg,config)
     print('email send result: %s'%result)

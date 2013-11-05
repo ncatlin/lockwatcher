@@ -3,7 +3,7 @@
 
 Various config file handling routines
 '''
-import configparser,re,pickle,os,time
+import ConfigParser,re,pickle,os,time
 import sys,subprocess
 from lockwatcher import hardwareconfig
 
@@ -18,16 +18,18 @@ writing = False
 def writeConfig():
     global writing
     writing = True
-    with open(CONFIG_FILE, 'w') as configfile:
-            config.write(configfile,space_around_delimiters=False)
+    try:
+        with open(CONFIG_FILE, 'w') as configfile:
+            config.write(configfile)
             configfile.close()
+    except: print('Failed to write config file: %s'%sys.exc_info()[0])
     '''the gui seems to hit a race condition when changing tabs occasionally
     but I haven't found a way to repeat it reliably. Putting a little sleep in here
     to give it time to write.
     '''
     time.sleep(0.1)
     writing = False
-    hardwareconfig.sendToLockwatcher('reloadConfig',config['TRIGGERS']['daemonport'])
+    hardwareconfig.sendToLockwatcher('reloadConfig',config.get('TRIGGERS','daemonport'))
     
 def checkBtnChanged(btn):
 
@@ -61,8 +63,8 @@ def entryChanged(thing):
     writeConfig()
 
 def tktrigStateChange(combo):
-    LOCKED = config['TRIGGERS']['lockedtriggers'].split(',')
-    ALWAYS = config['TRIGGERS']['alwaystriggers'].split(',')
+    LOCKED = config.get('TRIGGERS','lockedtriggers').split(',')
+    ALWAYS = config.get('TRIGGERS','alwaystriggers').split(',')
     
     new_trigger = combo.widget.current()
     trigger_type = combo.widget._name.upper()
@@ -77,21 +79,21 @@ def tktrigStateChange(combo):
     elif new_trigger == TRIG_ALWAYS:
         ALWAYS.append(trigger_type)
     
-    config['TRIGGERS']['lockedtriggers'] = str(LOCKED).strip("[]").replace("'","").replace(" ","")
-    config['TRIGGERS']['alwaystriggers'] = str(ALWAYS).strip("[]").replace("'","").replace(" ","")
+    config.set('TRIGGERS','lockedtriggers', str(LOCKED).strip("[]").replace("'","").replace(" ",""))
+    config.set('TRIGGERS','alwaystriggers', str(ALWAYS).strip("[]").replace("'","").replace(" ",""))
     writeConfig()
 
 def isActive(trigger):
-    if trigger in config['TRIGGERS']['alwaystriggers'].split(','):
+    if trigger in config.get('TRIGGERS','alwaystriggers').split(','):
         return (True,'Always')
-    elif trigger in config['TRIGGERS']['lockedtriggers'].split(','):
+    elif trigger in config.get('TRIGGERS','lockedtriggers').split(','):
         return (True,'Locked')
     else:
         return (False,False)
     
 def getActiveTriggers():
-    lockedTriggers = config['TRIGGERS']['lockedtriggers'].split(',')
-    alwaysTriggers = config['TRIGGERS']['alwaystriggers'].split(',')
+    lockedTriggers = config.get('TRIGGERS','lockedtriggers').split(',')
+    alwaysTriggers = config.get('TRIGGERS','alwaystriggers').split(',')
     return lockedTriggers+alwaysTriggers   
     
 #generate a keycode->keyname mapping
@@ -139,71 +141,68 @@ def loadConfig():
             os.chmod(CONFIG_FILE, 438) #rw-rw-rw-
         
         global config
-        config = configparser.ConfigParser()
+        config = ConfigParser.ConfigParser()
         config.add_section('TRIGGERS')
-        trig = config['TRIGGERS']
-        trig['bluetooth_device_id']=''
-        trig['kbd_kill_combo_1']=''
-        trig['kbd_kill_combo_1_txt']=''
-        trig['kbd_kill_combo_2']=''
-        trig['kbd_kill_combo_2_txt']=''
-        trig['keyboard_device']='None'
-        trig['mouse_device']='None'
-        trig['low_temp']='21'
-        trig['lockedtriggers']='E_DEVICE,E_NETCABLE,E_CHASSIS_MOTION,E_ROOM_MOTION,E_NET_CABLE_IN,E_NET_CABLE_OUT,E_KILL_SWITCH_2'
-        trig['alwaystriggers']='E_KILL_SWITCH_1'
-        trig['dismount_tc']='False'
-        trig['dismount_dm']='False'
-        trig['exec_shellscript']='False'
-        trig['script_timeout']='5'
-        trig['adapterconids']=''
-        trig['adapterdisconids']=''
+        config.set('TRIGGERS','bluetooth_device_id','')
+        config.set('TRIGGERS','kbd_kill_combo_1','')
+        config.set('TRIGGERS','kbd_kill_combo_1_txt','')
+        config.set('TRIGGERS','kbd_kill_combo_2','')
+        config.set('TRIGGERS','kbd_kill_combo_2_txt','')
+        config.set('TRIGGERS','keyboard_device','None')
+        config.set('TRIGGERS','mouse_device','None')
+        config.set('TRIGGERS','low_temp','21')
+        config.set('TRIGGERS','lockedtriggers','E_DEVICE,E_NETCABLE,E_CHASSIS_MOTION,E_ROOM_MOTION,E_NET_CABLE_IN,E_NET_CABLE_OUT,E_KILL_SWITCH_2')
+        config.set('TRIGGERS','alwaystriggers','E_KILL_SWITCH_1')
+        config.set('TRIGGERS','dismount_tc','False')
+        config.set('TRIGGERS','dismount_dm','False')
+        config.set('TRIGGERS','exec_shellscript','False')
+        config.set('TRIGGERS','script_timeout','5')
+        config.set('TRIGGERS','adapterconids','')
+        config.set('TRIGGERS','adapterdisconids','')
         
         if os.path.exists('/usr/bin/truecrypt'):
-            trig['tc_path']='/usr/bin/truecrypt'
+            config.set('TRIGGERS','tc_path','/usr/bin/truecrypt')
         elif os.path.exists('/usr/local/bin/truecrypt'):
-            trig['tc_path']='/usr/local/bin/truecrypt'
+            config.set('TRIGGERS','tc_path','/usr/local/bin/truecrypt')
         else:
-            trig['tc_path'] = ''
+            config.set('TRIGGERS','tc_path','')
             
-        trig['logfile']='/var/log/lockwatcher'
-        trig['daemonport']='22191'
-        trig['test_mode']='False'
+        config.set('TRIGGERS','logfile','/var/log/lockwatcher')
+        config.set('TRIGGERS','daemonport','22191')
+        config.set('TRIGGERS','test_mode','False')
         
         config.add_section('CAMERAS')
-        cameras = config['CAMERAS']
-        cameras['cam_chassis']=''
-        cameras['chassis_minframes']='2'
-        cameras['chassis_fps']='2'
-        cameras['chassis_threshold']='5000'
-        cameras['cam_room']=''
-        cameras['room_minframes']='5'
-        cameras['room_fps']='10'
-        cameras['room_threshold']='10000'
-        cameras['room_savepicture']='True'
-        cameras['image_path']='/tmp'
+        config.set('CAMERAS','cam_chassis','')
+        config.set('CAMERAS','chassis_minframes','2')
+        config.set('CAMERAS','chassis_fps','2')
+        config.set('CAMERAS','chassis_threshold','5000')
+        config.set('CAMERAS','cam_room','')
+        config.set('CAMERAS','room_minframes','5')
+        config.set('CAMERAS','room_fps','10')
+        config.set('CAMERAS','room_threshold','10000')
+        config.set('CAMERAS','room_savepicture','True')
+        config.set('CAMERAS','image_path','/tmp')
         
         config.add_section('EMAIL')
-        email = config['EMAIL']
         
-        email['email_alert']='False'
-        email['email_imap_host']='imap.changeme.domain'
-        email['email_smtp_host']='smtp.changeme.domain'
-        email['email_username']='changeme'
-        email['email_password']='changeme'
-        email['email_secret']='changeme'
-        email['bad_command_limit']='3'
-        email['enable_remote']='False'
-        email['email_motion_picture']='False'
-        email['alert_email_address']='yourphone@mail.domain'
-        email['command_email_address']='yourphone@mail.domain'
-        email['sender_email_address']='yourpc@mail.domain'
+        config.set('EMAIL','email_alert','False')
+        config.set('EMAIL','email_imap_host','imap.changeme.domain')
+        config.set('EMAIL','email_smtp_host','smtp.changeme.domain')
+        config.set('EMAIL','email_username','changeme')
+        config.set('EMAIL','email_password','changeme')
+        config.set('EMAIL','email_secret','changeme')
+        config.set('EMAIL','bad_command_limit','3')
+        config.set('EMAIL','enable_remote','False')
+        config.set('EMAIL','email_motion_picture','False')
+        config.set('EMAIL','alert_email_address','yourphone@mail.domain')
+        config.set('EMAIL','command_email_address','yourphone@mail.domain')
+        config.set('EMAIL','sender_email_address','yourpc@mail.domain')
         
         config.add_section('KEYBOARD')
-        config['KEYBOARD']['MAP'] = 'None'
+        config.set('KEYBOARD','MAP','None')
         writeConfig()
     else:    
-        config = configparser.ConfigParser()
+        config = ConfigParser.ConfigParser()
         config.read(CONFIG_FILE)
     return config
 
@@ -220,7 +219,7 @@ if not os.path.exists('/etc/lockwatcher/keymap') and os.geteuid() == 0:
     kCodes = generateKCodeTable()
     if kCodes != False:
         pickle.dump( kCodes, open( mapfile, "wb" ))
-        config['KEYBOARD']['MAP'] = mapfile
+        config.set('KEYBOARD','MAP',mapfile)
         writeConfig()
 
 #there must be a better way
@@ -280,8 +279,6 @@ if os.geteuid() == 0:
             fd.write(LOCKCMD)
             fd.close()
 
-
-            
 
 
 
