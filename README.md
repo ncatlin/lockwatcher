@@ -22,16 +22,16 @@ Install the dependencies
 
 *On Debian/-buntu/mint/etc:*
 ```
-sudo apt-get install python3 python3-setuptools python3-tk python3-pillow ifplugd python3-dbus
+sudo apt-get install python python-setuptools python-tk python-pillow ifplugd python-dbus python-bluez
 
-sudo easy_install3 IMAPClient pyudev
+sudo easy_install IMAPClient pyudev
 ```
 
 *On fedora*
 ```
-sudo yum install python3 python3-setuptools python3-tkinter python3-pillow ifplugd python3-dbus python3-gobject
+sudo yum install python python-setuptools python-tkinter python-pillow ifplugd python-dbus python-gobject
 
-sudo easy_install-3.3 IMAPClient pyudev
+sudo easy_install IMAPClient pyudev
 ```
 
 Extract the software, install, run, configure
@@ -40,14 +40,14 @@ tar -xf Lockwatcher*
 
 cd Lockwatcher*
 
-sudo python3 setup.py install
+sudo python setup.py install
 
 sudo lockwatcherd start
 
 lockwatcher-gui
 ```
 
-If python3-imaging or python3-pillow isn't available then just skip it.
+If python-imaging or python-pillow isn't available then just skip it.
 
 If your camera monitors give an error about needing libjpeg.so.8, you may want to install libjpeg8. 
 
