@@ -29,7 +29,7 @@ sudo easy_install IMAPClient pyudev
 
 *On fedora*
 ```
-sudo yum install python python-setuptools python-tkinter python-pillow ifplugd python-dbus python-gobject
+sudo yum install python python-setuptools tkinter python-pillow ifplugd python-dbus python-gobject pybluez
 
 sudo easy_install IMAPClient pyudev
 ```
