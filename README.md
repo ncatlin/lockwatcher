@@ -244,6 +244,12 @@ You need an email account with smtp and imap access, preferably a throwaway acco
 
 Q&A
 ============
+
+Q.Lockwatcher gives 'Motion error for /dev/videoX' when I try to run the chassis and room cameras at the same time.
+
+A.Certain HD webcams have the nasty habit of requesting maximum bandwidth, preventing other webcams on the same USB 
+hub from operating. Install the cameras on different USB hubs or use lower bandwidth cameras.
+
 Q.Can lockwatcher wipe files instead of just shutting down? 
 
 A.You can add relevant commands to the custom batch script which will be executed on emergency shutdown, 
