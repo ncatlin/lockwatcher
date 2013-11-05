@@ -99,7 +99,8 @@ class temperatureMonitor(threading.Thread):
         self.callback = callback
         self.error = None
         
-        for chip in sensors.get_detected_chips():
+        sensors.init()
+        for chip in sensors.iter_detected_chips():
             if "acpi" in str(chip): break
         else:
             self.die = True
@@ -107,17 +108,19 @@ class temperatureMonitor(threading.Thread):
             return
         self.chip = chip
             
-        for feature in chip.get_features():
-            if 'Temperature' in str(feature): break
-        for subfeature in chip.get_all_subfeatures(feature):
-            if 'input' in str(subfeature.name):break
-        self.subfeature = subfeature    
+        for feature in chip:
+            if 'MB Temperature' in feature.label: break
+        else: 
+            self.die = True
+            return
+        
+        self.feature = feature    
         self.die = False
         
     def run(self):
         while self.die == False:
             time.sleep(1)
-            newTemp = self.chip.get_value(self.subfeature.number)
+            newTemp = self.feature.get_value()
             self.callback("%s degrees C"%newTemp)
             
     def terminate(self):

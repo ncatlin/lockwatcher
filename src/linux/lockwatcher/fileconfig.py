@@ -144,6 +144,7 @@ def loadConfig():
         config = ConfigParser.ConfigParser()
         config.add_section('TRIGGERS')
         config.set('TRIGGERS','bluetooth_device_id','')
+        config.set('TRIGGERS','bluetooth_port','2')
         config.set('TRIGGERS','kbd_kill_combo_1','')
         config.set('TRIGGERS','kbd_kill_combo_1_txt','')
         config.set('TRIGGERS','kbd_kill_combo_2','')

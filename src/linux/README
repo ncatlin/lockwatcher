@@ -8,23 +8,22 @@ It should look something like this:
 
 On Debian/*buntu/mint/etc-
 
-sudo apt-get install python3 python3-setuptools python3-tk python3-pillow ifplugd python3-dbus
+sudo apt-get install python python-setuptools python-tk python-pillow ifplugd python-dbus python-bluez
 sudo easy_install3 IMAPClient pyudev
 tar -xvzf Lockwatcher*
 cd Lockwatcher*
-sudo python3 setup.py install
+sudo python setup.py install
 sudo lockwatcherd start
 lockwatcher-gui
 
-(note: Debian currently installs python 3.2 on stable, which breaks things. Install 3.3 from unstable until that changes)
 
 On fedora and its brethren:
 
-sudo yum install python3 python3-setuptools python3-tkinter python3-pillow ifplugd python3-dbus
-sudo easy_install-3.3 IMAPClient pyudev
+sudo yum install python python-setuptools python-tkinter python-pillow ifplugd python-dbus python-bluez
+sudo easy_install IMAPClient pyudev
 tar -xvzf Lockwatcher*
 cd Lockwatcher*
-sudo python3 setup.py install
+sudo python setup.py install
 sudo lockwatcherd start
 lockwatcher-gui
 
@@ -32,17 +31,13 @@ SENSORS
 -------------------
 While support from RAM temperature monitoring is in the works (it isn't), support is available
 for motherboard temperature monitoring in case whoever is freezing your ram also gets coolant over
-the motherboard thermometer or something?
+the motherboard thermometer or puts your entire PC in the freezer or something.
 
-It isn't included by default because I couldn't get the install to put the compiled sensors library
-in the right place in a system independent way and compiling it from source makes installation much
-more of a pain in the neck. 
 
-If you want it the install lm sensors:
+If you want it then install lm sensors:
 
 debian: sudo apt-get install lm-sensors
 fedora: sudo yum install lm_sensors
 
-You also need to install the pysensors module from here: http://bitbucket.org/bastienleonard/pysensors
-Or put the relevant precompiled binary from https://github.com/ncatlin/lockwatcher 
-in your python3.3/dist-packages directory
+And the python module
+easy_install PySensors

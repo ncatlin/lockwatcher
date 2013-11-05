@@ -62,8 +62,8 @@ root = Tk()
 a newListener request) to feed us updates and log events
 
 todo: although this was developed to allow multiple config programs to be used concurrently,
-a config reload only affects the daemon and not other listeners. Fix by having lockwatcher
-echo reloadrequests to its listeners'''
+a config reload only affects the daemon and not other listeners. Can fix by having lockwatcher
+echo reloadrequests to its listeners, but does anyone really care about having multiple config clients at once?'''
 class updateListenThread(threading.Thread):
     def __init__(self,statusCallback,logCallback):
         threading.Thread.__init__(self) 
@@ -504,7 +504,7 @@ class MainWindow(Frame):
         
     def createLogsPanel(self,parent):
         logFileFrame = Frame(parent)
-        logFileFrame.pack(side=TOP,fill=X,expand=YES)
+        logFileFrame.pack(side=TOP,fill=X,expand=NO)
         Label(logFileFrame,text='Logfile location:').pack(side=LEFT)
         
         logPath = StringVar()
@@ -520,12 +520,11 @@ class MainWindow(Frame):
         logPath.trace("w", lambda name, index, mode, logPath=logPath: self.changeEntryBox('TRIGGERS:logfile',self.logPath))
         
         msgFrame = ttk.Labelframe(parent,text='Recent events:',relief=SUNKEN)
-        msgFrame.pack(expand=YES,fill=BOTH,padx=4,pady=4)
+        msgFrame.pack(side=TOP,expand=YES,fill=BOTH,padx=4,pady=4)
         
         scrollbar = Scrollbar(msgFrame)
         scrollbar.pack(side=RIGHT, fill=Y)
         
-        #todo: resize with window
         messageListB = Text(msgFrame,width=60,height=21,yscrollcommand=scrollbar.set,wrap=WORD)
         messageListB.pack(side=LEFT,expand=YES,fill=BOTH,padx=4,pady=4)
         self.messageListB = messageListB
@@ -540,7 +539,6 @@ class MainWindow(Frame):
         
         Label(parent,text='Due to their frequency, ignored keyboard and mouse events are not logged.\nUse test mode to test them.').pack()
         
-    #todo: consolidate these for tc/log/mod
     def chooseLogFile(self):
         path = filedialog.asksaveasfilename(filetypes=[('txt files','.txt')])
         if path != '':
@@ -637,7 +635,8 @@ class MainWindow(Frame):
          
     def processNewEvents(self):
         for update in self.pendingStatuses:
-            self.threadStatus[update[0]].set(update[1])
+            if update[0] in self.threadStatus:
+                self.threadStatus[update[0]].set(update[1])
         self.pendingStatuses = []
         
         for msg in self.pendingLogs:
@@ -660,8 +659,8 @@ class MainWindow(Frame):
         
             
     def createBluetoothPanel(self,parent):
-        Label(parent,text='Lockwatcher will establish a connection to this bluetooth device.\
-        \nShutdown will be triggered if the connection is lost.').pack()
+        Label(parent,text='Lockwatcher will establish a connection to this bluetooth device.',anchor=CENTER).pack()
+        Label(parent,text='Shutdown will be triggered if the connection is lost.',anchor=CENTER).pack()
         BTBox = ttk.LabelFrame(parent,text="Bluetooth devices")
         BTBox.pack(side=TOP, fill=BOTH, expand=YES, padx=4, pady=4)
         
@@ -940,7 +939,7 @@ class MainWindow(Frame):
         cameraListBox.pack(fill=X,expand=YES,padx=8)
         self.cameraListBox = cameraListBox
         
-        Button(parent,text='Refresh Cameras',command=self.refreshCams).pack()
+        Button(parent,text='Refresh Camera List',command=self.refreshCams).pack()
 
         cameraSettingsFrame = Frame(parent)
         cameraSettingsFrame.pack(pady=8)
@@ -1015,7 +1014,7 @@ class MainWindow(Frame):
         
         doSave = fileconfig.config.get('CAMERAS','room_savepicture')
         self.SICheckVar = StringVar()
-        if doSave == '': self.SICheckVar.set('False')
+        if doSave == '' or doSave == 'False': self.SICheckVar.set('False')
         else: self.SICheckVar.set('True')
         saveImgCheck = Checkbutton(saveImgBox,text="Save Captured Image", variable = self.SICheckVar,
                                     onval='True',offval='False',command=(lambda: self.changeCheckBox('CAMERAS:room_savepicture',self.SICheckVar)))
@@ -1111,12 +1110,6 @@ class MainWindow(Frame):
             self.imgPath.set(newpath)
             fileconfig.config.set('CAMERAS','image_path',newpath)
             writeConfig()
-       
-    #choose whether to trigger before or after a camera capture has been saved
-    #todo change this like the others
-    def togglePictureEmail(self,newstate):
-        fileconfig.config.set('CAMERAS','room_savepicture',newstate)
-        writeConfig()   
            
     def videoDevChange(self,combo):
         
@@ -1458,7 +1451,7 @@ class MainWindow(Frame):
         section,key = keyname.split(':')
         strValue = str(val.get())
         fileconfig.config.set(section,key,strValue)
-        #writeConfig()
+        writeConfig()
         
     def changeEntryBox(self, keyname, val):
         section,key = keyname.split(':')
@@ -1488,7 +1481,7 @@ class MainWindow(Frame):
         checkEmailSend.pack()
         
         self.emailImageCheck = StringVar()
-        if fileconfig.config.get('EMAIL','email_alert') == 'True': self.emailImageCheck.set('True')
+        if fileconfig.config.get('EMAIL','email_motion_picture') == 'True': self.emailImageCheck.set('True')
         else: self.emailImageCheck.set('False')
         checkEmailSend = Checkbutton(box6,text="Email Captured Image",variable=self.emailImageCheck,
                                      onval='True',offval='False',command=(lambda: self.changeCheckBox('EMAIL:email_motion_picture',self.emailImageCheck)))

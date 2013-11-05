@@ -381,30 +381,24 @@ class temperatureMonitor(threading.Thread):
             return
         
         
-        for chip in sensors.get_detected_chips():
+        for chip in sensors.iter_detected_chips():
             if "acpi" in str(chip): break
         else:
             eventQueue.put(('log',"Could not read acpi bus: Temperature monitoring disabled"))
             eventQueue.put(('status','temperature',"Error: Could not read ACPI bus"))
             self.die = True
             return
+        
         self.chip = chip
             
-        for feature in chip.get_features():
-            if 'Temperature' in str(feature): break
+        for feature in chip:
+            if 'MB Temperature' in str(feature): break
         else:
             eventQueue.put(('log',"Could not read temperature from acpi bus: Temperature monitoring disabled"))
             eventQueue.put(('status','temperature',"Error: Could not read temperature from ACPI"))
             return
             
-        for subfeature in chip.get_all_subfeatures(feature):
-            if 'input' in str(subfeature.name):break
-        else: 
-            eventQueue.put(('log',"Could not read input from ACPI temperature: Temperature monitoring disabled"))
-            eventQueue.put(('status','temperature',"Error: Could not read input temperature from ACPI"))
-            return
-        
-        self.subfeature = subfeature    
+        self.feature = feature    
         self.running = True
       
     def run(self):
@@ -413,8 +407,8 @@ class temperatureMonitor(threading.Thread):
         eventQueue.put(('status','temperature',"Active"))
         while self.running == True:
             time.sleep(1)
-            newTemp = self.chip.get_value(self.subfeature.number)
-            if newTemp < fileconfig.config.get('TRIGGERS','LOW_TEMP'): 
+            newTemp = self.feature.get_value()
+            if newTemp < float(fileconfig.config.get('TRIGGERS','LOW_TEMP')): 
                 eventHandle('E_TEMPERATURE',"%s degrees C"%newTemp)
                 
         eventQueue.put(('status','temperature',"Not Started"))         
@@ -924,7 +918,7 @@ class camera_monitor(threading.Thread):
                     eventHandle(self.event,('Motion detected'))
             elif output[0] == 'path': #a new image capture
                 if self.event == 'E_ROOM_MOTION' and fileconfig.config.get('CAMERAS','room_savepicture') == 'True':
-                    eventHandle(self.event,('Motion capture generated',output[1]))  
+                    eventHandle(self.event,('Motion capture generated',str(output[1])))  
             elif output[0] == '':
                 continue
             else: 
