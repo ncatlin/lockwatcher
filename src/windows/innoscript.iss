@@ -43,6 +43,7 @@ Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: 
 
 [Run]
 Filename: "{app}\LockWatcherSvc.exe"; Parameters: "--install Lockwatcher"; Flags: runascurrentuser nowait runhidden; StatusMsg: "Registering service..."
+Filename: "{app}\locker.exe"; Flags: nowait runhidden runasoriginaluser; StatusMsg: "Registering service..."
 Filename: "{app}\install-interception.exe"; Parameters: "/install"; Flags: runascurrentuser skipifdoesntexist; StatusMsg: "Installing keyboard/mouse intercept driver"; OnlyBelowVersion: 6.2,6.2
 Filename: "{app}\{#MyAppExeName}"; Flags: nowait postinstall skipifsilent runascurrentuser; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"
 
@@ -403,7 +404,7 @@ Source: "C:\Users\UserX\workspace\workspace3\lockwatchwin\lockwatcher.ini"; Dest
 [Registry]
 Root: "HKLM"; Subkey: "Software\Lockwatcher"; ValueType: string; ValueName: "ConfigPath"; ValueData: "{commonappdata}\Lockwatcher\lockwatcher.ini"; Flags: createvalueifdoesntexist uninsdeletekey noerror
 Root: "HKLM"; Subkey: "Software\Lockwatcher"; ValueType: string; ValueName: "SDScript"; ValueData: "{commonappdata}\Lockwatcher\sd.bat"; Flags: createvalueifdoesntexist uninsdeletekey noerror
-Root: "HKCU"; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Lockwatcher"; ValueData: """{app}\Locker.exe"" StartLocker"; Flags: createvalueifdoesntexist uninsdeletevalue
+Root: "HKCU"; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Lockwatcher"; ValueData: """{app}\locker.exe"""; Flags: createvalueifdoesntexist uninsdeletevalue
 
 [UninstallRun]
 Filename: "{app}\LockWatcherSvc.exe"; Parameters: "--uninstall Lockwatcher"

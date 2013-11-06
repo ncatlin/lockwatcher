@@ -75,8 +75,7 @@ root = Tk()
 root.update()
 try:
     root.wm_iconbitmap('favicon.ico')
-except:
-    pass
+except: pass
 
 s = ttk.Style()
 s.configure('TLabelframe.Label', foreground='royalblue')
@@ -741,8 +740,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
@@ -880,8 +879,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack(side=RIGHT)
         trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
@@ -909,8 +908,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
@@ -1005,8 +1004,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
@@ -1028,8 +1027,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
@@ -1091,8 +1090,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
@@ -1121,8 +1120,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         
@@ -1265,8 +1264,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
     
@@ -1289,8 +1288,8 @@ class MainWindow(Frame):
         if triggerName in fileconfig.config.get('TRIGGERS','lockedtriggers').split(','):
             trigBox.current(0)
         elif triggerName in fileconfig.config.get('TRIGGERS','alwaystriggers').split(','):
-            trigBox.current(1)
-        else: trigBox.current(2)
+            trigBox.current(2)
+        else: trigBox.current(1)
         trigBox.pack()
         trigBox.bind('<<ComboboxSelected>>', tkTrigStateChange)
         

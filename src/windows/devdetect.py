@@ -1035,6 +1035,7 @@ class lockwatcher(threading.Thread):
                             AFroutines.emergency()
                             
                     continue
+                
             elif eventType == 'reloadConfig':
                 fileconfig.reloadConfig()
                 if isRunning('keyboardMonitor',threadDict): threadDict['keyboardMonitor'].reloadConfig()

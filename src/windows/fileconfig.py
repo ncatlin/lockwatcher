@@ -14,37 +14,7 @@ def writeConfig():
         with open(CONFIG_FILE, 'w') as configfile:
             config.write(configfile)#,space_around_delimiters=False)
     except: print('Failed to write config file')
-        
-def checkBtnChanged(btn):
-
-    btnName = btn.get_name()
-    if btnName == 'enable_remote':
-        config['EMAIL']['enable_remote'] = str(btn.get_active())
-    elif btnName == 'enable_alerts':
-        config['EMAIL']['email_alert'] = str(btn.get_active())
-    elif btnName == 'dismount_crypt':
-        config['TRIGGERS']['dismount_crypt'] = str(btn.get_active())
-    elif btnName == 'dismount_tc':
-        config['TRIGGERS']['dismount_tc'] = str(btn.get_active())
-    else: 
-        print('unknown toggle box: ',btnName)
-        return
     
-    writeConfig()
-    
-def entryChanged(thing):
-    entryName = thing.get_name()
-    
-    if entryName in config.options('EMAIL'):
-        section = 'EMAIL'
-    elif entryName in config.options('TRIGGERS'):
-        section = 'TRIGGERS'
-    else:
-        print('Unknown section for',entryName)
-        return
-    
-    config[section][entryName] = thing.get_text()
-    writeConfig()
 
 def isActive(trigger):
     if trigger in config.get('TRIGGERS','alwaystriggers').split(','):
@@ -71,7 +41,6 @@ def loadConfig():
         print('writing new config')
         config = ConfigParser.ConfigParser()
         config.add_section('TRIGGERS')
-        config.set('TRIGGERS','bluetooth_device_id','')
         config.set('TRIGGERS','bluetooth_device_id','')
         config.set('TRIGGERS','kbd_kill_combo_1','')
         config.set('TRIGGERS','kbd_kill_combo_2','')
