@@ -1,3 +1,5 @@
+[2016 Status: The windows version of this relies on having a signed driver to detect lock events, which we don't have. The effort required to maintain this capability for all the flavours of linux desktop enviroments combined with my faded interest in antiforensics means this project is unmaintained]
+
 lockwatcher
 ===========
 
